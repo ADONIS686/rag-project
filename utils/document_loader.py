@@ -111,6 +111,19 @@ def save_documents_to_json(documents: list[Document], output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(docs_json, f, ensure_ascii=False, indent=2)
 
+# 从JSON文件加载预处理好的文档（Day3专用）
+def load_documents_from_json(file_path: str) -> list[Document]:
+    with open(file_path, "r", encoding="utf-8") as f:
+        docs_json = json.load(f)
+    
+    documents = []
+    for doc in docs_json:
+        documents.append(Document(
+            page_content=doc["page_content"],
+            metadata=doc["metadata"]
+        ))
+    return documents
+
 # ------------------- 测试代码（直接运行即可）-------------------
 if __name__ == "__main__":
     # 1. 读取原始文档
