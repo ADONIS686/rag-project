@@ -6,7 +6,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 # 导入通义千问向量嵌入模型
 from langchain_community.embeddings import DashScopeEmbeddings
 # 导入ChromaDB向量库
-from langchain_community.vectorstores import Chroma
+#from langchain_community.vectorstores import Chroma
+# 新写法 无警告
+from langchain_chroma import Chroma
 # 导入分块工具
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 # 导入Document对象
@@ -79,7 +81,7 @@ def create_vector_store(documents: list[Document]) -> Chroma:
     )
     
     # 持久化保存到本地硬盘（下次不用重新创建）
-    vector_store.persist()
+    #vector_store.persist()
     print(f"新手提示：向量库创建成功，共存储{len(documents)}个文档块")
     
     return vector_store
@@ -119,27 +121,27 @@ def similarity_search(vector_store: Chroma, query: str, top_k: int = 3) -> list[
 # ------------------- 测试代码（直接运行即可）-------------------
 if __name__ == "__main__":
     # 1. 加载Day2预处理好的文档
-    #documents = load_documents_from_json("data/processed_documents.json")
-    #print(f"加载文档数量：{len(documents)}")
+    documents = load_documents_from_json("data/processed_documents.json")
+    print(f"加载文档数量：{len(documents)}")
     
     # 2. 对文档进行分块
-    #chunks = split_documents(documents)
-    #print(f"分块后文档块数量：{len(chunks)}")
+    chunks = split_documents(documents)
+    print(f"分块后文档块数量：{len(chunks)}")
     
     # 3. 创建向量库并保存到本地
-    #vector_store = create_vector_store(chunks)
+    vector_store = create_vector_store(chunks)
 
     # 加载本地向量库（不用重新创建）
     vector_store = load_vector_store()
     print("向量库加载成功")
     
-    # 测试5个不同的查询词（覆盖你文档的不同部分）
+    # 测试几个不同的查询词（覆盖你文档的不同部分）
     test_queries = [
         "请介绍一下这个文档的主要内容",
-        "文档中提到了哪些关键概念",
-        "这个项目的目标是什么",
-        "如何使用这个系统",
-        "这个技术有什么优势"
+        "皇后是徐墙吗",
+        "皇帝有几个妃子",
+        "哪些妃子有孩子",
+        "皇帝的名字是什么"
     ]
     
     # 循环测试每个查询

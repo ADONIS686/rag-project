@@ -1,9 +1,15 @@
 # config/settings.py 全局配置文件
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
+# ------------------- 路径自动定位（更稳、不写死） -------------------
+# 项目根目录（自动找，不怕挪位置）
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
 # 自动加载.env文件里的API密钥（不用手动写在这里，防止泄露）
-load_dotenv("config/.env")
+load_dotenv(BASE_DIR / "config" / ".env")
 
 # ------------------- API配置 -------------------
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")

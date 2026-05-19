@@ -17,14 +17,13 @@ Omit --global to set the identity only in this repository.
 git config --global user.name "你的GitHub用户名"
 git config --global user.email "你的GitHub邮箱"
 
-### 2. 报错名称：
+### 2. 报错名称：ModuleNotFoundError: No module named 'config'
 - 错误提示：(rag-project) PS F:\rag-project> & f:\rag-project\.venv\Scripts\python.exe f:/rag-project/rag/vector_store.py
 Traceback (most recent call last):
   File "f:\rag-project\rag\vector_store.py", line 12, in <module>
     from config.settings import (
     ...<6 lines>...
     )
-ModuleNotFoundError: No module named 'config'
 - 原因：Python 运行 rag/vector_store.py 时，找不到 config 模块，核心问题是：
 你运行脚本时，Python 的「模块搜索路径」里没有包含你的项目根目录 F:\rag-project
 当它执行 from config.settings import ... 时，只会在 rag/ 文件夹里找 config，而你的 config 文件夹在项目根目录，自然找不到
@@ -42,7 +41,29 @@ sys.path.append(str(Path(__file__).parent.parent))
 python -m rag.vector_store
 原理：-m 会自动把当前工作目录加入 Python 搜索路径，让它能找到 config
 
-### 3. 报错名称：
+### 3. Day4 报错名称：ModuleNotFoundError: No module named 'langchain.prompts'
+- 错误提示：(rag-project) PS F:\rag-project> & f:\rag-project\.venv\Scripts\python.exe f:/rag-project/rag/base_rag.py
+Traceback (most recent call last):
+  File "f:\rag-project\rag\base_rag.py", line 4, in <module>
+    from langchain.prompts import PromptTemplate
+- 原因：版本是 langchain 1.3.1（最新版），这个版本彻底删除了 RetrievalQA，全世界所有旧的导入方式都失效了！
+- 解决方法：直接用新版官方标准写法（LCEL）
+# rag/base_rag.py
+# 适配 langchain 1.3.1 最新版 | 无RetrievalQA | 直接运行
+from langchain_community.chat_models import ChatTongyi
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
+### 4. 报错名称：
+- 错误提示：
+- 原因：
+- 解决方法：
+### 5. 报错名称：
+- 错误提示：
+- 原因：
+- 解决方法：
+### 2. 报错名称：
 - 错误提示：
 - 原因：
 - 解决方法：
