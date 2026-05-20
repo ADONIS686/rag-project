@@ -33,5 +33,5 @@ VECTOR_DB_PATH = "./chroma_db"
 COLLECTION_NAME = "rag_collection"
 
 # ------------------- 检索配置 -------------------
-# 每次搜索返回最相关的3个文本块
+# 每次搜索返回最相关的k个文本块
 RETRIEVER_TOP_K = 3

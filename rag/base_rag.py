@@ -25,31 +25,83 @@ def get_llm():
 
 # ====================== 2. 提示词模板 ======================
 def get_prompt():
-    template = """你是专业的文档问答助手，请严格根据提供的上下文回答问题。
-文中【陛下】指代皇帝，结合上下文找出陛下对应的人名；
-上下文中没有答案，必须回答：根据文档内容，我无法回答这个问题。
-禁止编造信息，回答简洁准确。
+    template = """依据检索到的所有文本内容作答，允许进行合理人物关系逻辑推导，不必局限于单一片段内容。
+你可以使用大众通用的宫廷历史基础常识进行判断,遇到不清楚的可以联网搜索理解含义再作答
+
+
+作答要求：
+1. 可以整合多处信息串联得出答案，支持身份、亲属、称谓互相推导，称谓、本名、帝号、身份自由互换作答
+2. 有明确对应关系直接简洁回答
+3. 严禁编造原文不存在的人物与剧情
+4. 结合基础身份常识，通读上下文，从文内原文找出每个称谓对应的专属人名
+5. 严格依据文中描写的地位、职权、位份，区分皇后与普通后宫女子
+6. 真正无任何相关信息，统一回复：根据文档内容，我无法回答这个问题
+7. 最终答案只输出精准人名或标准固定话术，不额外多余解释
+8. 询问名字、本名、真名，统一输出人物原生姓名
+
+
 
 上下文：
 {context}
 
 用户问题：
 {question}
-请根据上下文回答用户问题："""
 
+按规则严谨作答："""
     return PromptTemplate.from_template(template)
+
+# 格式化文档（增强版：去重+过滤空内容+去除多余空格）
+def format_docs(docs):
+    # 第一步：过滤无关文档、空文档和内容过短的文档 # 过滤掉长度小于20的无效片段
+    valid_docs = [
+        doc
+        for doc in docs 
+        # 过滤条件：长度>20 + 仅目标文档
+        if len(doc.page_content.strip()) > 20 
+        and "wenben1.pdf" in doc.metadata["source"]
+    ]
+    
+    # 第二步：去重（去除内容完全一样的文档）
+    # 1. 定义空列表：用来存放【去重后】的有效文档片段
+    unique_docs = []
+
+    # 2. 定义空集合：专门用来记录【已经出现过的文本内容】
+    # 集合(set)的特点：查询速度极快，自动不允许重复值
+    seen_contents = set()
+
+    # 3. 遍历【第一步过滤好的有效文档】，逐个检查是否重复
+    for doc in valid_docs:
+        # 4. 取出当前文档的文本内容，并用strip()清洗首尾空格/换行
+        content = doc.page_content.strip()
+
+        # 5. 关键判断：如果这段文本【从来没出现过】
+        if content not in seen_contents:
+            # 6. 把这段文本标记为「已出现」，存入集合
+            seen_contents.add(content)
+            # 7. 把这个不重复的文档，加入最终的去重列表
+            unique_docs.append(doc)
+
+    # 第三步：拼接成最终上下文
+    # 8. 把所有去重后的文档，提取纯文本，用 --- 分隔开，拼接成一整段字符串
+    return "\n\n---\n\n".join(doc.page_content.strip() for doc in unique_docs)
+
 
 # ====================== 3. 构建RAG链 ======================
 def get_rag_chain():
     # 加载向量库
     vector_store = load_vector_store()
     # 创建检索器
-    retriever = vector_store.as_retriever(search_kwargs={"k": RETRIEVER_TOP_K})
-
-    # 格式化文档
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
-
+    #retriever = vector_store.as_retriever(search_kwargs={"k": RETRIEVER_TOP_K})
+    # 创建检索器（MMR多样性检索，彻底解决重复问题）
+    retriever = vector_store.as_retriever(
+        #最大边际相关性检索（Maximal Marginal Relevance），在保持相关性的同时增加结果的多样性，避免重复内容
+        search_type="mmr",  # 核心：从默认的"similarity"改成"mmr"多样性检索
+        search_kwargs={
+            "k": RETRIEVER_TOP_K,  # 你刚才选的最优k值
+            "fetch_k": 30,  # 先取20个最相似的候选
+            "lambda_mult": 0.7  # 0.7=相似度优先，兼顾多样性；0 = 只看多样性，1 = 只看相似度，0.7 是通用最优值）
+        }
+    )
     # 新版标准RAG链 LangChain 专用流水线语法（LCEL）
     #把「检索文档→填提示词→AI 答题→转字符串」打包成一条全自动链条
     #符号 | = 管道符（上一步输出 → 下一步输入）
@@ -77,7 +129,7 @@ def interactive_qa():
     
     while True:
         question = input("\n请输入你的问题：")
-        if question.lower() == "退出":
+        if question.lower() in ["退出", "q"]:
             print("感谢使用，再见！")
             break
         
