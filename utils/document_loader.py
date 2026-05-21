@@ -8,6 +8,8 @@ import json
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 # 导入Document对象，规范返回格式
 from langchain_core.documents import Document
+# ==========【新增白名单】==========
+from config.settings import ALLOW_DOC_NAMES
 
 # ------------------- 函数1：读取单个文档（自动识别PDF/TXT）-------------------
 def load_single_document(file_path: str) -> Document:
@@ -54,6 +56,10 @@ def load_documents_from_folder(folder_path: str) -> list[Document]:
     documents = []
     # 遍历文件夹里的所有文件
     for file_name in os.listdir(folder_path):
+        # 先判断：文件名不在白名单 → 直接跳过忽略
+        if file_name not in ALLOW_DOC_NAMES:
+            print(f"⏭ 自动忽略非指定文档：{file_name}")
+            continue
         # 拼接完整的文件路径（避免路径写错）
         file_path = os.path.join(folder_path, file_name)
         # 判断是不是文件（排除子文件夹）

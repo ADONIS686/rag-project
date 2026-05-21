@@ -34,4 +34,11 @@ COLLECTION_NAME = "rag_collection"
 
 # ------------------- 检索配置 -------------------
 # 每次搜索返回最相关的k个文本块
-RETRIEVER_TOP_K = 3
+RETRIEVER_TOP_K = 5
+
+# 文档加载白名单，只加载列表内文件
+ALLOW_DOC_NAMES = [
+    "wenben1.pdf",
+    # 后续新增文档只填这里，不用改任何代码
+    # "wenben2.pdf"
+]

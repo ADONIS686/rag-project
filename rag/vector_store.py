@@ -15,6 +15,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 # 导入json模块，加载Day2的预处理文档
 import json
+# ==========【新增导入删库模块】==========
+import os
+import shutil
 # 导入全局配置
 from config.settings import (
     DASHSCOPE_API_KEY,
@@ -24,9 +27,13 @@ from config.settings import (
     VECTOR_DB_PATH,
     COLLECTION_NAME
 )
-
-# ------------------- 函数1：加载Day2预处理好的文档 -------------------
+#自动调用文档预处理函数，生成processed_documents.json（如果已经有了就覆盖掉，保持最新）
+from utils.document_loader import load_documents_from_folder, clean_text, filter_short_documents, save_documents_to_json
+# ------------------- 函数1：加载Day2预处理好的文档 【修改：置空废弃，不再使用】-------------------
 def load_documents_from_json(file_path: str) -> list[Document]:
+    """
+    【废弃】不再手动读取json，全程自动生成
+    """
     """
     【新手说明】：从Day2生成的processed_documents.json文件加载文档
     :param file_path: json文件路径
@@ -60,12 +67,40 @@ def split_documents(documents: list[Document]) -> list[Document]:
     return text_splitter.split_documents(documents)
 
 # ------------------- 函数3：创建向量库并保存到本地 -------------------
-def create_vector_store(documents: list[Document]) -> Chroma:
+# ==========【修改1：删掉传入参数，无参调用】==========
+# 旧：def create_vector_store(documents: list[Document]) -> Chroma:
+# 新：
+def create_vector_store() -> Chroma:
+    """
+    全自动：自动预处理文档+生成json+清旧库+建新库
+    """
     """
     【新手说明】：把分块后的文档转成向量，存入本地ChromaDB数据库
     :param documents: 分块后的文档片段列表
     :return: Chroma向量库对象
     """
+    # ==========【新增：全套自动预处理逻辑】==========
+    print("🔄 自动执行文档预处理...")
+    # 1. 自动加载白名单文档
+    raw_docs = load_documents_from_folder("data/raw")
+    # 2. 自动清洗
+    cleaned_docs = []
+    for doc in raw_docs:
+        doc.page_content = clean_text(doc.page_content)
+        cleaned_docs.append(doc)
+    # 3. 过滤短文本
+    filtered_docs = filter_short_documents(cleaned_docs)
+    # 4. 自动覆盖生成processed_documents.json
+    save_documents_to_json(filtered_docs, "data/processed_documents.json")
+    documents = filtered_docs
+    split_docs = split_documents(documents)
+    documents = split_docs
+    
+    # ==========【新增：自动删除旧向量库】==========
+    if os.path.exists(VECTOR_DB_PATH):
+        shutil.rmtree(VECTOR_DB_PATH)
+        print("🗑️ 已清理旧向量库，避免旧数据残留")
+
     # 初始化向量嵌入模型（把文本转成数字向量）
     embeddings = DashScopeEmbeddings(
         model=EMBEDDING_MODEL_NAME,
@@ -120,21 +155,24 @@ def similarity_search(vector_store: Chroma, query: str, top_k: int = 3) -> list[
 
 # ------------------- 测试代码（直接运行即可）-------------------
 if __name__ == "__main__":
-    # 1. 加载Day2预处理好的文档
-    documents = load_documents_from_json("data/processed_documents.json")
-    print(f"加载文档数量：{len(documents)}")
+    # # 1. 加载Day2预处理好的文档
+    # documents = load_documents_from_json("data/processed_documents.json")
+    # print(f"加载文档数量：{len(documents)}")
     
-    # 2. 对文档进行分块
-    chunks = split_documents(documents)
-    print(f"分块后文档块数量：{len(chunks)}")
+    # # 2. 对文档进行分块
+    # chunks = split_documents(documents)
+    # print(f"分块后文档块数量：{len(chunks)}")
     
-    # 3. 创建向量库并保存到本地
-    vector_store = create_vector_store(chunks)
+    # # 3. 创建向量库并保存到本地
+    # vector_store = create_vector_store(chunks)
 
-    # 加载本地向量库（不用重新创建）
-    vector_store = load_vector_store()
-    print("向量库加载成功")
+    # # 加载本地向量库（不用重新创建）
+    # vector_store = load_vector_store()
+    # print("向量库加载成功")
     
+    #入口
+    vector_store = create_vector_store()
+
     # 测试几个不同的查询词（覆盖你文档的不同部分）
     test_queries = [
         "请介绍一下这个文档的主要内容",
