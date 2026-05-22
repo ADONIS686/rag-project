@@ -4,7 +4,7 @@ from langchain_community.chat_models import ChatTongyi
 # ✅ 修复：PromptTemplate 移到 langchain_core 了
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from config.settings import ALLOW_DOC_NAMES
 
 # 导入你的向量库和配置
@@ -15,6 +15,46 @@ from config.settings import (
     TEMPERATURE,
     RETRIEVER_TOP_K
 )
+# ====================== 新增：查询重写配置 ======================
+QUERY_REWRITE_PROMPT = """
+你是一个专门处理宫廷剧本问答的问句改写助手。
+请将用户的原始问句改写成一个**清晰、精准、适合检索**的标准问句。
+
+【改写规则】
+1.  保留原始问题的所有核心信息，不能遗漏
+2.  把模糊的指代（他、她、这个、那个、这件事）替换成明确的表述
+3.  把口语化表达改成书面语
+4.  所有提到"陛下"、"皇帝"的地方，统一改成"燕光逸"
+5.  只输出改写后的问句，不要输出任何其他内容、解释或标点
+
+【绝对禁止行为（违者重罚）】
+❌ 禁止添加任何原始问题没有的限定词（如"生母"、"燕光逸制定"等）
+❌ 禁止替换原始问题的主体（如把"皇后"改成"燕光逸"）
+❌ 禁止预设答案，不能提前代入人物身份
+
+【禁止示例对照】
+错误：国丧阶段后宫有哪些限制要求？→燕光逸在国丧阶段对后宫有哪些限制要求
+正确：国丧阶段后宫存在哪些限制要求
+
+错误：四月为何严厉整顿后宫规矩？→燕光逸为何在四月严厉整顿后宫规矩
+正确：四月份后宫规矩被严厉整顿的原因是什么
+
+【示例】
+原始问句：他是谁？
+改写后：文中提到的这个男性人物的姓名和身份是什么
+
+原始问句：她住在哪？
+改写后：文中这个女性角色居住的宫殿名称是什么
+
+原始问句：陛下做了什么？
+改写后：燕光逸在文中做了哪些事情
+
+原始问句：为什么会这样？
+改写后：文中描述的这个事件发生的原因是什么
+
+原始问句：{question}
+改写后：
+"""
 
 # ====================== 1. 初始化大模型 ======================
 def get_llm():
@@ -125,6 +165,27 @@ def format_docs(docs):
     # 8. 把所有去重后的文档，提取纯文本，用 --- 分隔开，拼接成一整段字符串
     return "\n\n---\n\n".join(doc.page_content.strip() for doc in unique_docs)
 
+# ====================== 新增：查询重写函数 ======================
+def rewrite_query(input_dict: dict) -> str:# ✅ 改成接收字典，不是字符串
+    """
+    【新手解释】
+    把用户的模糊口语化问句改写成清晰的标准问句
+    :param input_dict: 包含原始问句的字典，格式为 {"question": "用户的原始问句"}
+    :return: 改写后的标准问句
+    """
+    # ✅ 从字典里提取原始问题字符串
+    original_question = input_dict["question"]
+
+    # 创建提示词模板
+    prompt = PromptTemplate.from_template(QUERY_REWRITE_PROMPT)
+    # 构建重写链：提示词 → 大模型 → 输出字符串
+    rewrite_chain = prompt | get_llm() | StrOutputParser()
+    # 执行重写
+    rewritten_question = rewrite_chain.invoke({"question": original_question})
+    # 打印重写结果（方便调试）
+    print(f"\n[查询重写] 原始问句：{original_question}")
+    print(f"[查询重写] 改写后：{rewritten_question}")
+    return rewritten_question
 
 # ====================== 3. 构建RAG链 ======================
 def get_rag_chain():
@@ -142,17 +203,35 @@ def get_rag_chain():
             "lambda_mult": 0.8  # 0.7=相似度优先，兼顾多样性；0 = 只看多样性，1 = 只看相似度，0.7 是通用最优值）
         }
     )
-    # 新版标准RAG链 LangChain 专用流水线语法（LCEL）
-    #把「检索文档→填提示词→AI 答题→转字符串」打包成一条全自动链条
-    #符号 | = 管道符（上一步输出 → 下一步输入）
-    #retriever：检索器 → 去向量库查3 条最相关文档； |：管道符 → 把查到的文档传给后面；format_docs：格式化函数 → 把文档拼接成纯文本 最终结果：上下文文本 填入 {context}
-    #RunnablePassthrough() LangChain 工具 → 原样透传  把用户输入的问题原封不动传给提示词 用户问题 填入 {question}
+
+    # 新版带查询重写的RAG链
     rag_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | get_prompt() #返回提示词模板对象； 输入：上一步的字典（context + question）；动作：自动把两个值填入 {context} {question} ；输出：完整的、发给 AI 的提示词
-        | get_llm() #返回你的大模型（通义千问）输入：完整提示词；动作：AI 阅读上下文 + 思考 + 生成答案；输出：大模型原生响应对象（不是纯字符串）
-        | StrOutputParser()#LangChain 解析器；输入：大模型复杂响应；动作：剥离多余信息，只保留文字答案；输出："燕光逸" / "根据文档内容，我无法回答这个问题"
+        # 第一步：接收用户原始问句
+        {"question": RunnablePassthrough()}
+        # 第二步：执行查询重写，生成rewritten_question
+        | RunnablePassthrough.assign(rewritten_question=rewrite_query)
+        # 第三步：用改写后的问句检索文档，同时保留原始问句给大模型
+        | {#lambda x：匿名临时函数 x就代表上一步传过来的完整字典对象
+        #检索器（向量库）很笨，必须用规整、无歧义、精准的改写问题才能找到正确文档；大模型很 “聪明”，能直接理解用户的原始口语 / 指代问题，必须用原问题才能生成自然、贴合用户意图的答案。所以这里同时传入两个版本的问题：一个给检索器（context），一个给大模型（question）。'''
+        "context": RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs),
+        "question": lambda x: x["question"]
+        }
+        # 第四步：生成答案
+        | get_prompt()
+        | get_llm()
+        | StrOutputParser()
     )
+    # # 新版标准RAG链 LangChain 专用流水线语法（LCEL）
+    # #把「检索文档→填提示词→AI 答题→转字符串」打包成一条全自动链条
+    # #符号 | = 管道符（上一步输出 → 下一步输入）
+    # #retriever：检索器 → 去向量库查3 条最相关文档； |：管道符 → 把查到的文档传给后面；format_docs：格式化函数 → 把文档拼接成纯文本 最终结果：上下文文本 填入 {context}
+    # #RunnablePassthrough() LangChain 工具 → 原样透传  把用户输入的问题原封不动传给提示词 用户问题 填入 {question}
+    # rag_chain = (
+    #     {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    #     | get_prompt() #返回提示词模板对象； 输入：上一步的字典（context + question）；动作：自动把两个值填入 {context} {question} ；输出：完整的、发给 AI 的提示词
+    #     | get_llm() #返回你的大模型（通义千问）输入：完整提示词；动作：AI 阅读上下文 + 思考 + 生成答案；输出：大模型原生响应对象（不是纯字符串）
+    #     | StrOutputParser()#LangChain 解析器；输入：大模型复杂响应；动作：剥离多余信息，只保留文字答案；输出："燕光逸" / "根据文档内容，我无法回答这个问题"
+    # )
     return rag_chain, retriever
 
 
@@ -172,16 +251,19 @@ def interactive_qa():
         if question.lower() in ["退出", "q"]:
             print("感谢使用，再见！")
             break
+        question = question.strip()
         
         print("\n正在检索答案，请稍候...")
         source_docs = retriever.invoke(question)
         answer = qa_chain.invoke(question)
-        
+
         print(f"\n回答：{answer}")
         print("\n参考来源：")
         for i, doc in enumerate(source_docs):
             print(f"[{i+1}] {doc.metadata['source']}")
             print(f"    内容片段：{doc.page_content[:100]}...")
+
+
 
 # ------------------- 新的测试代码 -------------------
 if __name__ == "__main__":

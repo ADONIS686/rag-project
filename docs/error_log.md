@@ -1,4 +1,20 @@
 # 报错记录与解决方法
+1：解决 GitHub 同步问题（永久生效）
+新手解释：之前 GitHub 同步失败是因为远程地址配置错误，现在重新设置为你的仓库地址
+终端执行以下命令（直接复制）：
+powershell
+# 1. 查看当前远程地址（确认是否正确）
+git remote -v
+# 2. 设置为你的GitHub仓库地址
+git remote set-url origin https://github.com/ADONIS686/rag-project.git
+# 3. 拉取远程最新代码（避免冲突）
+git pull origin main --allow-unrelated-histories
+# 4. 推送本地所有提交
+git push -u origin main
+✅ 成功标准：
+终端显示Everything up-to-date
+刷新 GitHub 页面，能看到最新的 "Day5：升级提示词..." 提交记录
+
 
 ## Day1 报错记录
 ### 1. 报错名称：
@@ -142,3 +158,84 @@ from langchain_core.runnables import RunnablePassthrough
 - 解决方法：
   1. 调整检索参数，将`vector_store.as_retriever`的`k`值从3改为5，提升上下文召回量；
   2. 优化提示词指代规则，放宽判定逻辑，自动绑定同上下文内的宫廷称谓与人名，实现精准指代匹配。
+
+# error_log.md 今日day7 报错&问题记录
+### 1. 报错名称：Python管道符类型不支持错误
+- 错误提示：`TypeError: unsupported operand type(s) for '|': 'list' and 'function'`，程序运行直接崩溃，无法执行问答流程
+- **错误代码**：
+```python
+# 报错核心代码段
+{
+    "context": lambda x: retriever.invoke(x["rewritten_question"]) | format_docs,
+    "question": lambda x: x["question"]
+}
+```
+- 原因：
+  1. **核心语法错误**：在 `lambda` 匿名函数中手动调用 `retriever.invoke()`，该方法会**立即执行检索**，返回结果是**文档列表（list）** 这类实际数据，而非 LangChain 的 `Runnable` 可运行对象；
+  2. **管道符使用规则混淆**：LCEL 管道符 `|` 是 LangChain 专用语法，**仅支持连接 Runnable 可运行对象**（如 retriever、llm、prompt），不支持 Python 普通数据与普通函数直接拼接；
+  3. **执行逻辑错误**：`invoke()` 是触发执行的方法，调用后链路终止，无法再用管道符衔接后续函数。
+- 解决方法：
+  1. **方案1（推荐，纯Python函数调用）**：移除管道符，将检索结果作为参数直接传入格式化函数：
+  ```python
+  "context": lambda x: format_docs(retriever.invoke(x["rewritten_question"])),
+  ```
+  2. **方案2（纯LCEL规范）**：使用 `RunnableLambda` 包装所有自定义函数，全程用管道符链式编写：
+  ```python
+  "context": RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs),
+  ```
+
+
+### 2. 问题名称：查询重写功能违规改写（核心业务问题）
+- 错误提示：模型私自篡改用户问题，如`母后→生母`、`皇后整顿宫规→燕光逸整顿宫规`、`国丧规矩→燕光逸制定的国丧规矩`，导致检索匹配失败，最终回答`文档中没有找到相关信息`
+- **错误代码/配置**：
+  1. **旧版错误重写函数**（传参错误）：
+  ```python
+  # 错误：接收字符串参数，实际传入字典，导致改写逻辑混乱
+  def rewrite_query(question: str) -> str:
+      prompt = PromptTemplate.from_template(QUERY_REWRITE_PROMPT)
+      rewrite_chain = prompt | get_llm() | StrOutputParser()
+      return rewrite_chain.invoke({"question": question})
+  ```
+  2. **旧版无约束重写提示词**：无禁止规则，模型自主脑补内容
+- 原因：
+  1. **函数传参BUG**：`RunnablePassthrough.assign` 会自动传入完整字典，旧函数仅接收字符串，参数不匹配导致改写异常；
+  2. **提示词规则缺失**：初始重写 Prompt 无严格约束，大模型凭借宫廷常识**私自添加限定词、替换问题主体**；
+  3. **否定规则失效**：单纯禁止性话术对大模型约束力极低，模型会优先忽略规则，篡改原始问题语义；
+  4. **指代逻辑错误**：将通用称谓（母后、太后）错误绑定为专属身份（生母），完全偏离文档内容。
+- 解决方法：
+  1. **修复重写函数**：修改为接收字典参数，正确提取问题字符串：
+  ```python
+  def rewrite_query(input_dict: dict) -> str:
+      original_question = input_dict["question"]
+      prompt = PromptTemplate.from_template(QUERY_REWRITE_PROMPT)
+      rewrite_chain = prompt | get_llm() | StrOutputParser()
+      return rewrite_chain.invoke({"question": original_question})
+  ```
+  2. **优化重写提示词**：新增**强制正向规则+禁止反例**，严格禁止模型增删修改问题主体和限定词；
+  3. **规范改写逻辑**：仅优化语句通顺度，**100%保留原始问题的核心语义、主体、限定条件**。
+
+---
+
+### 3. 问题名称：回答信息不完整
+状态：未完成优化
+错误提示：检索参数已上调至k=5，改写语句合规，但作答依旧存在信息缺失。示例查询皇后四月生辰当天做了什么？，仅回复当日家宴、歇息相关内容，遗漏三月下旬上奏恳请罢黜庆典进贡、收受简约贺礼等前置关键行为
+当前检索配置代码
+python
+运行
+retriever = vector_store.as_retriever(
+    search_type="mmr",
+    search_kwargs={
+        "k": 5,
+        "fetch_k": 30,
+        "lambda_mult": 0.8
+    }
+)
+# 原因：
+语义检索偏向性局限：改写问句聚焦当日行为，向量匹配优先抓取同期片段，跨时序筹备内容相似度偏低，无法有效召回；
+文档切片碎片化：事件筹备、申请、当日活动拆分存储在不同文本块，单次检索难以串联完整时间线；
+信息整合能力不足：模型仅独立解读单条片段，不会主动关联前后事件，忽略铺垫类关键信息。
+# 待优化方案：
+微调查询改写语义，放宽时间检索范围，兼容生辰前后关联事件；
+调整 MMR 检索权重，平衡相似度与内容多样性，提升冷门片段召回概率；
+优化问答提示词，要求模型整合多段内容，梳理完整事件脉络作答。
+当前状态：问题依旧存在，相关优化工作延后至次日处理
