@@ -20,7 +20,7 @@ LLM_MODEL_NAME = "qwen-max"
 # 向量嵌入模型名称（专门用来把文本转成向量）
 EMBEDDING_MODEL_NAME = "text-embedding-v1"
 # 大模型温度（0=最严谨，不编造内容）
-TEMPERATURE = 0.1
+TEMPERATURE = 0
 
 # ------------------- 文本分块配置（填你刚才选的最优参数）-------------------
 CHUNK_SIZE = 800  # 替换成你的最优值
