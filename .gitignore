@@ -6,7 +6,7 @@ env/
 # Python编译文件（适配所有子目录的__pycache__）
 **/__pycache__/
 *.pyc
-*.pyo
+*.pyog
 *.pyd
 
 # 配置文件（包含敏感信息）

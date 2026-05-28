@@ -252,3 +252,27 @@ retriever = vector_store.as_retriever(
   1. 拆分RAG链路分步执行，仅执行1次检索并复用结果，统一打印和业务调用的文档；
   2. 改造答案生成链、自我纠正链，取消内部自动检索，改为接收外部传入的上下文文档；
   3. 保证函数打印的参考来源，与链路实际使用的检索文档100%一致
+
+# error_log.md 今日day10 报错&问题记录
+## 问题 1：子链调用逻辑错误，代码直接报错
+现象：误用 self_correction_chain 生成原始答案，且对字符串类型的返回值调用 .get()，触发 AttributeError: 'str' object has no attribute 'get'。
+原因：混淆两条业务链职责，self_correction_chain 输出为纯字符串，并非字典，不能使用字典方法。
+解决方案：
+严格按照链路顺序调用：rewrite_query → generate_answer_chain → self_correction_chain；
+修正入参：答案修正链必须传入 question / rewritten_question / raw_answer 三个字段。
+## 问题 2：try 块部分代码执行成功后报错，中间数据全部丢失
+现象：某条用例执行到后半段报错，except 块强制将 rewritten_question、raw_answer 置空，已成功生成的中间数据无法写入 CSV，不利于问题排查。
+解决方案：
+使用 变量名 if '变量名' in locals() else "" 语法：
+变量已定义（代码执行成功）：保留原有值；
+变量未定义（未执行就报错）：填充空字符串兜底。
+## 问题 3：Windows 环境导出 CSV 出现大量多余空行
+现象：CSV 数据行之间穿插空行，Excel/WPS 打开格式错乱。
+原因：csv 库每行自动追加 \n，Windows 默认开启换行符自动转换，\n 转为 \r\n，最终叠加为 \r\n\r\n 双换行。
+解决方案：
+文件写入时固定添加 newline=''，关闭 Python 自动换行转换，保证全平台 CSV 格式统一。
+## 问题 4：仅通过 str(e) 只能看到错误描述，无法定位具体报错行（）（实际未使用）
+现象：报错信息模糊，不知道 try 代码块中哪一行代码触发异常，调试效率低。
+解决方案：
+顶部导入 import traceback；
+在 except 块中添加 traceback.print_exc()，打印完整堆栈信息，精准定位文件、行号、报错代码。
