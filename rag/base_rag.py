@@ -68,11 +68,11 @@ SELF_CORRECTION_PROMPT = """
 
 【检查规则】
 1.答案和文档内容、问题诉求完全匹配，直接原样输出
-2.仅修正事实错误、关键信息缺漏，**禁止补充无关细节、背景推断、额外解读**
+2.仅修正事实错误、关键信息缺漏，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
 3.文档无对应相关内容，固定输出：文档中没有明确说明
 4.如果答案中出现了文档里没有的内容，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
 5.如果你要改动原答案，在回答里要先说明「原答案错误/不完整」，再给出修正后的「正确答案」
-6.如果不需要改动原答案，仅输出原答案，禁止任何附加解释、推理、多余标点
+6.如果不需要改动原答案，仅输出原答案，禁止在原答案基础上添加任何附加解释、推理、多余标点
 7.字面无明确佐证的内容，不擅自增补进答案。
 8.禁止无原文依据做推测、推断类补充，只采信明文记载信息。
 
@@ -91,11 +91,16 @@ SELF_CORRECTION_PROMPT = """
 
 
 # ====================== 1. 初始化大模型 ======================
-def get_llm():
+def get_llm(temperature: float = None):
+    # 如果传入了临时温度，使用临时值；否则使用全局配置的默认温度
+    use_temp = temperature if temperature is not None else TEMPERATURE
     return ChatTongyi(
         model=LLM_MODEL_NAME,
-        temperature=TEMPERATURE,
-        dashscope_api_key=DASHSCOPE_API_KEY
+        dashscope_api_key=DASHSCOPE_API_KEY,
+        model_kwargs={
+            "temperature": use_temp,
+            "top_p": 0.8
+        }
     )
 
 # ====================== 2. 提示词模板 ======================
