@@ -16,11 +16,11 @@ DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
 # ------------------- 模型配置 -------------------
 # 大模型名称（用通义千问免费版足够）
-LLM_MODEL_NAME = "qwen-plus-2025-07-28"
+LLM_MODEL_NAME = "qwen-plus-1220"
 # 向量嵌入模型名称（专门用来把文本转成向量）
 EMBEDDING_MODEL_NAME = "text-embedding-v1"
 # 大模型温度（0=最严谨，不编造内容）但是实际效果目前0.1最好，0会偶尔不输出答案，等DashScope后续优化了可以再调回0
-TEMPERATURE = 0.5 
+TEMPERATURE = 0.5
 
 # ------------------- 文本分块配置（填你刚才选的最优参数）-------------------
 CHUNK_SIZE = 800  # 替换成你的最优值

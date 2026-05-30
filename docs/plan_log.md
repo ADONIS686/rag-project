@@ -1126,3 +1126,6 @@ datetime.now().strftime("%Y-%m-%d %H:%M:%S")：将时间对象转为 年-月-日
 rewrite_query：实现问题重写；
 generate_answer_chain：生成原始答案 raw_answer；
 self_correction_chain：基于原始答案做修正，生成最终答案 final_answer。
+
+# Day11: RAG 自动化测试脚本（Day10）
+优化rag链路节约token,优化prompt

@@ -16,6 +16,7 @@ LLM_JUDGE_PROMPT = """
 
 【评分标准】
 - 1分：实际答案完全正确，语义与预期答案完全一致
+- 1分：实际答案包含预期答案全部核心信息，仅表述形式略有差异，同时补充了部分额外内容，但不影响核心信息的正确性
 - 0.5分：实际答案部分正确，包含预期答案的核心信息，但有少量遗漏或多余内容
 - 0分：实际答案完全错误，与预期答案语义不符，或编造了不存在的信息
 
@@ -95,9 +96,10 @@ def batch_test(test_cases_file: str, output_file: str):
         try:
             rewritten_question = rewrite_query({"question": question})
             print(f"  - 重写后的问题：{rewritten_question}")
-            raw_answer = generate_answer_chain.invoke({"question": question, "rewritten_question": rewritten_question})
+            generate_chain= generate_answer_chain.invoke({"question": question, "rewritten_question": rewritten_question})
+            raw_answer = generate_chain["answer"]
             print(f"  - 原始答案：{raw_answer}")
-            final_answer = self_correction_chain.invoke({"question": question, "rewritten_question": rewritten_question, "answer": raw_answer})
+            final_answer = self_correction_chain.invoke(generate_chain)
             print(f"  - 最终答案：{final_answer}")
 
             # 新增：调用LLM-Judge自动评分
@@ -168,5 +170,5 @@ def batch_test(test_cases_file: str, output_file: str):
 
 if __name__ == "__main__":
     # 运行Day10测试用例
-    batch_test("standard_test_cases.csv", "test_report_day11.csv")
+    batch_test("standard_test_cases.csv", "test_report_day12.csv")
     

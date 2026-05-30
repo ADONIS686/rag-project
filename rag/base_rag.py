@@ -37,6 +37,7 @@ QUERY_REWRITE_PROMPT = """
 4. 只优化语句通顺度，不添加、不删除、不修改任何原始问题的内容
 5. 只输出改写后的问句，不要任何其他内容、解释或标点
 
+
 【错误示例（绝对不能这么写）】
 原始：燕光逸的母后是什么身份？
 错误：燕光逸的生母身份是什么
@@ -68,13 +69,13 @@ SELF_CORRECTION_PROMPT = """
 
 【检查规则】
 1.答案和文档内容、问题诉求完全匹配，直接原样输出
-2.仅修正事实错误、关键信息缺漏，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
-3.文档无对应相关内容，固定输出：文档中没有明确说明
-4.如果答案中出现了文档里没有的内容，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
-5.如果你要改动原答案，在回答里要先说明「原答案错误/不完整」，再给出修正后的「正确答案」
+2.如果答案中出现了文档里没有的内容，且无法根据文档推断出来，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
+3.如果答案错误，仅修正事实错误、关键信息缺漏，然后输出正确答案，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
+4.仅当上下文完全不存在和问题相关的描述、线索、行为记录时，才输出：文档中没有明确说明；存在相关线索、行为、场景描述时，必须基于已有内容作答。
+5.如果你要改动原答案，仅输出修正后的「正确答案」，严格禁止输出任何解释、推理过程、修改痕迹、原答案内容、额外标点或多余文字，禁止输出思考过程
 6.如果不需要改动原答案，仅输出原答案，禁止在原答案基础上添加任何附加解释、推理、多余标点
-7.字面无明确佐证的内容，不擅自增补进答案。
-8.禁止无原文依据做推测、推断类补充，只采信明文记载信息。
+7.字面无明确佐证的内容且无法根据文档推断出来，不擅自增补进答案。
+8.禁止无文档依据在原答案基础上做推测、推断类补充，要以原文为主。
 
 
 用户问题：
@@ -125,10 +126,11 @@ def get_prompt():
 【输出格式要求】
 9. 直接给出答案，无需额外开头铺垫语句
 10. 多个人物、多处地点使用分号分隔；事件类内容条理通顺即可
+11. 回答简洁明了直击重点，只回答提问的内容，与问题无关的内容不要过多提及，禁止冗长啰嗦
 
 【通用禁止项】
-11. 不得脱离文档拓展延伸，不做主观评价解读
-12. 禁止删减关键有效信息作答
+12. 不得脱离文档拓展延伸，不做主观评价解读
+13. 禁止删减关键有效信息作答
 
 上下文文档：
 {context}
@@ -290,22 +292,42 @@ def get_rag_chain():
             #"seed": SEED # 新版 LangChain 1.3.1 的 MMR 检索器参数改成了 "seed"，之前的 "random_state" 已经废弃了
         }
     )
-    # ------------------- 第一步：生成初步答案 -------------------
+    # # ------------------- 第一步：生成初步答案 -------------------
+    # generate_answer_chain = (
+    #     {
+    #         "context": RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs),
+    #         "question": RunnableLambda(lambda x: x["question"])
+    #     }
+    #     | get_prompt()
+    #     | get_llm()
+    #     | StrOutputParser()
+    # )
+
+
+    # ------------------- 第一步：生成初步答案（仅检索一次） -------------------
     generate_answer_chain = (
-        {
-            "context": RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs),
-            "question": RunnableLambda(lambda x: x["question"])
-        }
-        | get_prompt()
-        | get_llm()
-        | StrOutputParser()
+        RunnablePassthrough.assign(
+            # 只做一次检索，生成 context
+            ##检索器（向量库）很笨，必须用规整、无歧义、精准的改写问题才能找到正确文档；
+            context=RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs)
+        )
+        | RunnablePassthrough.assign(
+            # 复用 context 生成答案
+            answer=(
+                #大模型很 “聪明”，能直接理解用户的原始口语 / 指代问题，必须用原问题才能生成自然、贴合用户意图的答案。
+                {"context": lambda x: x["context"], "question": lambda x: x["question"]}
+                | get_prompt()
+                | get_llm()
+                | StrOutputParser()
+            )
+        )
     )
 
     # ------------------- 第二步：自我纠正 -------------------
     self_correction_chain = (
         {
-            # 不复用之前的context了，重新检索一次，保证纠正阶段拿到的上下文是最新的、最相关的；同时保留原始问题和初步答案，给纠正链更多信息来判断答案对错
-            "context": RunnableLambda(lambda x: format_docs(retriever.invoke(x["rewritten_question"]))),
+            #token不够用了，先不复用了，直接把之前的检索结果传过来用着；后续如果想优化再想办法增加token预算或者改成分段纠正
+            "context": RunnableLambda(lambda x: x["context"]),
             "answer": RunnableLambda(lambda x: x["answer"]),
             "question": RunnableLambda(lambda x: x["question"])
         }
@@ -321,7 +343,7 @@ def get_rag_chain():
         # 2. 查询重写
         | RunnablePassthrough.assign(rewritten_question=rewrite_query)
         # 3. 生成初步答案
-        | RunnablePassthrough.assign(answer=generate_answer_chain)
+        | generate_answer_chain
         # 4. 自我纠正，得到最终答案
         | self_correction_chain
     )
@@ -348,14 +370,8 @@ def interactive_qa():
         question = question.strip()
         
         print("\n正在检索答案，请稍候...")
-        source_docs = retriever.invoke(question)
         answer = qa_chain.invoke(question)
-
         print(f"\n回答：{answer}")
-        print("\n参考来源：")
-        for i, doc in enumerate(source_docs):
-            print(f"[{i+1}] {doc.metadata['source']}")
-            print(f"    内容片段：{doc.page_content[:100]}...")
 
 # ------------------- 函数4：交互式问答Demo（测试版：显示两次答案） -------------------
 #测试完毕应注释掉使用原版函数，避免重复打印重写日志
@@ -384,13 +400,11 @@ def interactive_qa():
         step1_result = {"question": question}
         step2_result = RunnablePassthrough.assign(rewritten_question=rewrite_query).invoke(step1_result)
         
+        # 步骤1：初次检索+生成初步答案
+        step3_result = generate_answer_chain.invoke(step2_result)
+        raw_answer = step3_result["answer"]
         #拿到改写问题对应的检索文档（给后续纠正链使用）
         source_docs = retriever.invoke(step2_result["rewritten_question"])
-
-
-        # 步骤1：初次检索+生成初步答案
-        step3_result = RunnablePassthrough.assign(answer=generate_answer_chain).invoke(step2_result)
-        raw_answer = step3_result["answer"]
         
         # 步骤2：矫正阶段检索+生成最终答案
         final_answer = self_correction_chain.invoke(step3_result)
@@ -402,6 +416,7 @@ def interactive_qa():
         for i, doc in enumerate(source_docs):
             print(f"[{i+1}] {doc.metadata['source']}")
             print(f"    内容片段：{doc.page_content[:100]}...")
+
 
 # ------------------- 新的测试代码 -------------------
 if __name__ == "__main__":
