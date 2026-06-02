@@ -13,14 +13,20 @@ load_dotenv(BASE_DIR / "config" / ".env")
 
 # ------------------- API配置 -------------------
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+KIMI_API_KEY = os.getenv("KIMI_API_KEY")
 
 # ------------------- 模型配置 -------------------
-# 大模型名称（用通义千问免费版足够）
-LLM_MODEL_NAME = "qwen-plus-1220"
-# 向量嵌入模型名称（专门用来把文本转成向量）
+# 可用模型：qwen-plus | deepseek-chat(V4) | moonshot-v1-2.6
+LLM_MODEL_NAME = "qwen-plus"
+# 深度求索 DeepSeek V4（批量测试、打分首选，价格极低）
+DEEPSEEK_MODEL_NAME = "deepseek-chat"
+# Kimi v2.6（长文档处理）
+KIMI_MODEL_NAME = "moonshot-v1-2.6"
+# 向量嵌入模型名称
 EMBEDDING_MODEL_NAME = "text-embedding-v1"
-# 大模型温度（0=最严谨，不编造内容）但是实际效果目前0.1最好，0会偶尔不输出答案，等DashScope后续优化了可以再调回0
-TEMPERATURE = 0.5
+# 大模型温度
+TEMPERATURE = 0.1
 
 # ------------------- 文本分块配置（填你刚才选的最优参数）-------------------
 CHUNK_SIZE = 800  # 替换成你的最优值
