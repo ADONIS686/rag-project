@@ -17,10 +17,12 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 KIMI_API_KEY = os.getenv("KIMI_API_KEY")
 
 # ------------------- 模型配置 -------------------
-# 可用模型：qwen-plus | deepseek-chat(V4) | moonshot-v1-2.6
+# 可用模型：qwen-plus | deepseek-v4-pro | deepseek-v4-flash | moonshot-v1-2.6
 LLM_MODEL_NAME = "qwen-plus"
-# 深度求索 DeepSeek V4（批量测试、打分首选，价格极低）
-DEEPSEEK_MODEL_NAME = "deepseek-chat"
+# 深度求索 DeepSeek V4 Pro（推理最强版，RAG回答、Scorer打分用）
+DEEPSEEK_MODEL_NAME = "deepseek-v4-pro"
+# 深度求索 DeepSeek V4 Flash（极速便宜版，批量测试/护栏过滤用）
+DEEPSEEK_FLASH_MODEL_NAME = "deepseek-v4-flash"
 # Kimi v2.6（长文档处理）
 KIMI_MODEL_NAME = "moonshot-v1-2.6"
 # 向量嵌入模型名称

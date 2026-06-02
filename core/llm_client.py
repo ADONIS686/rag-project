@@ -1,7 +1,7 @@
 """
 core/llm_client.py - 统一多模型调用客户端
 
-支持 DeepSeek / 通义千问 / Kimi / 本地 Ollama 四模型切换。
+支持 DeepSeek V4 Pro / Flash / 通义千问 / Kimi / 本地 Ollama 五模型切换。
 所有云端 API 兼容 OpenAI SDK 格式，切换零成本。
 
 用法：
@@ -23,10 +23,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")         
 
 class ModelType(Enum):
     """支持的模型类型"""
-    DEEPSEEK = "deepseek"   # 最便宜，批量测试用
-    QWEN = "qwen"           # 通义千问（当前项目已有）
-    KIMI = "kimi"           # 长文档处理
-    LOCAL = "local"         # Ollama 本地 Llama3
+    DEEPSEEK = "deepseek"           # DeepSeek V4 Pro — 主力，推理最强
+    DEEPSEEK_FLASH = "deepseek_flash"  # DeepSeek V4 Flash — 批量跑测，便宜 5~10 倍
+    QWEN = "qwen"                   # 通义千问（当前项目已有）
+    KIMI = "kimi"                   # 长文档处理
+    LOCAL = "local"                 # Ollama 本地 Llama3
 
 
 class LLMClient:
@@ -37,7 +38,12 @@ class LLMClient:
         ModelType.DEEPSEEK: {
             "base_url": "https://api.deepseek.com/v1",
             "api_key_env": "DEEPSEEK_API_KEY",
-            "model_name": "deepseek-chat",
+            "model_name": "deepseek-v4-pro",
+        },
+        ModelType.DEEPSEEK_FLASH: {
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key_env": "DEEPSEEK_API_KEY",
+            "model_name": "deepseek-v4-flash",
         },
         ModelType.QWEN: {
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
