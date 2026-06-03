@@ -1169,3 +1169,55 @@ self_correction_chain：基于原始答案做修正，生成最终答案 final_a
 1. 文档解析：用Marker替换PyPDF，解决PDF表格和图片解析问题
 2. 混合检索：BM25+向量检索+重排序，提升检索准确率
 3. 多模型切换：支持云端/本地模型自由切换，降低成本
+
+---
+# Day13（6.3 周三）✅ 完成
+
+## 完成内容
+1. 创建 `core/vector_store_manager.py`，实现多文档向量库独立管理（每份文档独立 collection，支持按文档名过滤检索）
+2. `from langchain_community.embeddings import DashScopeEmbeddings` 警告处理：忽略 sunset 警告，后续 Day15 迁移 Milvus 时一并替换
+3. 修复 Windows 下 Chroma 文件锁未释放导致 `PermissionError` 的问题（`delete_collection` 方法增加 `gc.collect()` + 重试机制）
+4. 创建 `utils/marker_parser.py`，Marker 文档解析器骨架就绪（Marker v1.10.2 安装验证通过）
+5. `utils/marker_parser.py` 测试脚本就绪（待实际 PDF 解析验证）
+
+## 新增文件
+- `core/vector_store_manager.py` — 多文档向量库管理器
+- `utils/marker_parser.py` — Marker 文档解析器（骨架）
+
+## 具体执行情况
+- `vector_store_manager.py` 测试通过：导入/检索/删除全流程 ✅
+- Marker 安装验证：`pip show marker-pdf` → v1.10.2 ✅
+- 3份测试文档已放入 `data/raw/`：wenben1.txt、wenben2.pdf、wenben3.pdf ✅
+- `delete_collection` Windows 文件锁 bug 已修复（gc + 重试3次）
+
+## 未完成事项（顺延 Day14）
+- `utils/marker_parser.py` 尚未用实际 PDF 验证解析效果
+- `utils/chunker.py` 规则分块器尚未创建
+- `scripts/import_docs.py` 多文档批量导入脚本尚未创建
+- 3份文档分块隔离效果尚未测试验证
+
+## 明日（Day14）待办
+1. 验证 `marker_parser.py` 实际解析效果（用 wenben2.pdf / wenben3.pdf）
+2. 创建 `utils/chunker.py` 规则分块器
+3. 创建 `scripts/import_docs.py` 多文档批量导入脚本
+4. 完成3份文档导入 + 隔离检索验证
+5. 如 Day14 计划有空余时间，提前启动缓存机制开发
+
+## 今日遇到的问题
+1. **`ModuleNotFoundError: No module named 'langchain_chroma'`**
+   - 解决：`pip install langchain-chroma`
+2. **`ModuleNotFoundError: No module named 'langchain_community'`**
+   - 解决：`pip install langchain-community`
+3. **`ModuleNotFoundError: No module named 'config'`**
+   - 原因：`core/` 子目录运行，Python 找不到项目根目录的 `config` 模块
+   - 解决：文件头部加 `sys.path.insert(0, str(Path(__file__).parent.parent))`
+4. **Windows `PermissionError: 另一个程序正在使用此文件`**
+   - 原因：Chroma 删除 collection 时文件句柄未释放
+   - 解决：`delete_collection` 中先 `store.delete_collection()` → `del` → `gc.collect()` → 重试3次删目录
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day13：多文档向量库隔离架构 + Marker解析器骨架 + Windows文件锁bug修复"
+git push
+```
