@@ -28,7 +28,12 @@ data/processed_documents.json
 
 # 向量数据库（本地生成，绝不提交）
 chroma_db/
+*.db
 
 # 系统垃圾文件（全平台通用）
 .DS_Store
 Thumbs.db
+
+# 屏蔽VS Code工作区配置
+*.code-workspace
+.vscode/

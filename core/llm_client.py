@@ -16,6 +16,7 @@ import os
 from enum import Enum
 from pathlib import Path
 from dotenv import load_dotenv
+from core.request_logger import log_request
 
 load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")                      # 执行读 .env，后面 os.getenv() 就能取到值了
 
@@ -114,6 +115,27 @@ class LLMClient:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        #response
+        # ├─ choices：AI回答内容（response.choices[0].message.content）
+        # └─ usage：Token消耗统计对象
+        #    ├─ prompt_tokens：输入token（用户提问） → input_tokens
+        #    └─ completion_tokens：输出token（AI回复） → output_tokens
+
+        # ========== 新增：Token统计 ==========
+        from core.cost_tracker import get_tracker
+        tracker = get_tracker()
+        cost = tracker.record(
+            model=model.value,
+            #OpenAI 规范接口返回对象自带的内置属性，调用完 create() 请求大模型后，服务商返回的完整数据包里自带 usage 字段，里面有 prompt_tokens（输入 tokens 数量）和 completion_tokens（输出 tokens 数量）
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+        )
+        log_request(
+            model=model.value,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+            cost=cost,                          # tracker.record 返回的费用
+        )
         #AI 生成的候选回答列表,取第一个、最优的回答,回答的消息对象的纯文本回答内容,去掉首尾空白
         return response.choices[0].message.content.strip()
 
@@ -127,6 +149,14 @@ class LLMClient:
                 "temperature": temperature,
                 "num_predict": max_tokens,
             },
+        )
+        # === 新增：Token统计 ===
+        from core.cost_tracker import get_tracker
+        tracker = get_tracker()
+        tracker.record(
+            model="local",
+            input_tokens=response.get("prompt_eval_count", 0),
+            output_tokens=response.get("eval_count", 0),
         )
         return response["message"]["content"].strip()
 

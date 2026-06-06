@@ -44,7 +44,7 @@ uv venv
 # Windows PowerShell 激活虚拟环境
 .venv\Scripts\activate
 
-# 批量安装项目全部依赖库
+#批量安装项目全部依赖库
 uv add langchain langchain-community chromadb streamlit python-dotenv pypdf dashscope
 ```
 #### 执行成功标准
@@ -1221,3 +1221,35 @@ git add .
 git commit -m "Day13：多文档向量库隔离架构 + Marker解析器骨架 + Windows文件锁bug修复"
 git push
 ```
+
+---
+
+# Day16（6.6 周六）— Token统计 + 规则分块 + 全链路日志
+
+## 完成内容
+1. **Token统计**：新建 `core/cost_tracker.py`，按模型不同自动计费，内存统计 + JSONL持久化
+2. **llm_client.py 集成**：`tracker.record()` 挂在 `_openai_compatible_chat()` 和 `_ollama_chat()` 内部
+3. **规则分块器**：新建 `utils/chunker.py`，接收 marker 的 `List[Document]`，表格/图片透传，文本段落拼接至 chunk_size
+4. **全链路日志**：新建 `core/request_logger.py`，JSONL 格式，每天一个文件，记录 request_id/query/token/cost
+5. **plan_v2.md 重构**：对照 plan1 查漏，补回 8 个遗漏任务
+
+## 新增文件
+- `core/cost_tracker.py`
+- `core/request_logger.py`
+- `utils/chunker.py`
+
+## 修改文件
+- `core/llm_client.py`（tracker + logger 集成）
+
+## 验证结果
+- Token统计：DeepSeek 1次调用 → 10/440 token → ¥0.000125 ✅
+- 规则分块：wenben2.pdf → 67块解析 → 22块分块（text×12 + image×9 + table×1）✅
+- 全链路日志：`logs/requests_2026-06-06.jsonl` 写入验证 ✅
+
+## Git 提交
+```bash
+git add .
+git commit -m "Day16：Token统计(cost_tracker) + 规则分块器(chunker) + 全链路日志(request_logger)"
+git push
+```
+

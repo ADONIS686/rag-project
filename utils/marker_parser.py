@@ -70,7 +70,7 @@ def parse_pdf_with_marker(file_path: str) -> List[Document]:
     # 打印处理进度，让用户知道程序正在运行
     print(f"  🔍 正在解析PDF: {os.path.basename(file_path)}")
     
-    # 统一转换为绝对路径
+    # 统一转换为绝对路径也即是文件的完整路径，避免后续处理中文件找不到的问题
     # 解决不同运行目录下相对路径找不到文件的问题
     file_path = str(Path(file_path).resolve())
 
@@ -82,7 +82,7 @@ def parse_pdf_with_marker(file_path: str) -> List[Document]:
     # 执行PDF解析，返回包含所有结构化信息的渲染结果对象
     rendered = converter(file_path)
     
-    # 提取解析结果
+    # 提取解析，结果固定返回 3 个返回值：(完整md文本, 无用中间对象, 图片信息字典)
     # text: 完整的Markdown格式文本（包含表格和图片标注）
     # _: 中间返回值（我们不需要，用下划线忽略）
     # images: 图片详细信息字典（本项目暂未使用，保留供后续扩展）
@@ -101,7 +101,6 @@ def parse_pdf_with_marker(file_path: str) -> List[Document]:
         # 过滤无效内容：空段落和过短文本（可能是页码、页眉页脚残留）
         if not para or len(para) < 10:
             continue
-
         # 根据Markdown语法特征自动识别段落类型
         if para.startswith("|") and para.endswith("|"):
             block_type = "table"  # Markdown表格以|开头和结尾
