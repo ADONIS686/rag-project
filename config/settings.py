@@ -18,7 +18,7 @@ KIMI_API_KEY = os.getenv("KIMI_API_KEY")
 
 # ------------------- 模型配置 -------------------
 # 可用模型：qwen-plus | deepseek-v4-pro | deepseek-v4-flash | moonshot-v1-2.6
-LLM_MODEL_NAME = "qwen-plus"
+LLM_MODEL_NAME = "qwen-plus-2025-12-01"
 # 深度求索 DeepSeek V4 Pro（推理最强版，RAG回答、Scorer打分用）
 DEEPSEEK_MODEL_NAME = "deepseek-v4-pro"
 # 深度求索 DeepSeek V4 Flash（极速便宜版，批量测试/护栏过滤用）
@@ -47,6 +47,7 @@ RETRIEVER_TOP_K = 20
 # 文档加载白名单，只加载列表内文件
 ALLOW_DOC_NAMES = [
     "wenben1.pdf",
+    "wenben1.txt",
     # 后续新增文档只填这里，不用改任何代码
     # "wenben2.pdf"
 ]

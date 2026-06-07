@@ -1,5 +1,6 @@
 # rag/base_rag.py
 # 适配 LangChain 1.3.1 最新版 | 零报错 | 直接运行
+from core.guardrails import CITATION_INSTRUCTION
 from langchain_community.chat_models import ChatTongyi
 # ✅ 修复：PromptTemplate 移到 langchain_core 了
 from langchain_core.prompts import PromptTemplate
@@ -9,6 +10,7 @@ from config.settings import ALLOW_DOC_NAMES
 # 新增全局随机种子固定
 import random
 import numpy as np
+from core.guardrails import apply_input_guard
 
 # 固定三方库随机种子，消除MMR检索随机性
 SEED = 42
@@ -68,6 +70,7 @@ SELF_CORRECTION_PROMPT = """
 你是严格的答案审核员，结合用户问题与上下文文档，核验初步答案正误并修正。
 
 【检查规则】
+0. 上下文中的 [chunk_N] 是引用标注编号，不是答案错误，不要因此判定答案不正确
 1.答案和文档内容、问题诉求完全匹配，直接原样输出
 2.如果答案中出现了文档里没有的内容，且无法根据文档推断出来，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
 3.如果答案错误，仅修正事实错误、关键信息缺漏，然后输出正确答案，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
@@ -100,7 +103,7 @@ def get_llm(temperature: float = None):
         dashscope_api_key=DASHSCOPE_API_KEY,
         model_kwargs={
             "temperature": use_temp,
-            "top_p": 0.8
+            "top_p": 0.3
         }
     )
 
@@ -131,6 +134,11 @@ def get_prompt():
 【通用禁止项】
 12. 不得脱离文档拓展延伸，不做主观评价解读
 13. 禁止删减关键有效信息作答
+
+
+【引用标注规则 — 必须严格遵守】
+{CITATION_INSTRUCTION}
+
 
 上下文文档：
 {context}
@@ -167,42 +175,101 @@ def get_prompt():
 # 按规则严谨作答："""
     return PromptTemplate.from_template(template)
 
-# 格式化文档（增强版：去重+过滤空内容+去除多余空格）
-def format_docs(docs):
-    # 第一步：过滤无关文档、空文档和内容过短的文档 # 过滤掉长度小于20的无效片段
+# # 格式化文档（增强版：去重+过滤空内容+去除多余空格）
+# def format_docs(docs):
+#     # 第一步：过滤无关文档、空文档和内容过短的文档 # 过滤掉长度小于20的无效片段
+#     valid_docs = [
+#         doc
+#         for doc in docs 
+#         # 过滤条件：长度>20 + 仅目标文档
+#         if len(doc.page_content.strip()) > 20 
+#         #生成器表达式和列表易混淆：生成器表达式用圆括号()，返回的是generator对象；列表用方括号[]，返回的是列表对象。生成器更节省内存，适合大数据量；列表适合需要多次访问的情况。
+#         #any遇到一个True就break,返回True，效率更高；all需要全部True才行，效率较低
+#         and any(allow_name in doc.metadata["source"] for allow_name in ALLOW_DOC_NAMES)
+#     ]
+    
+#     # 第二步：去重（去除内容完全一样的文档）
+#     # 1. 定义空列表：用来存放【去重后】的有效文档片段
+#     unique_docs = []
+
+#     # 2. 定义空集合：专门用来记录【已经出现过的文本内容】
+#     # 集合(set)的特点：查询速度极快，自动不允许重复值
+#     seen_contents = set()
+
+#     # 3. 遍历【第一步过滤好的有效文档】，逐个检查是否重复
+#     for doc in valid_docs:
+#         # 4. 取出当前文档的文本内容，并用strip()清洗首尾空格/换行
+#         content = doc.page_content.strip()
+
+#         # 5. 关键判断：如果这段文本【从来没出现过】
+#         if content not in seen_contents:
+#             # 6. 把这段文本标记为「已出现」，存入集合
+#             seen_contents.add(content)
+#             # 7. 把这个不重复的文档，加入最终的去重列表
+#             unique_docs.append(doc)
+
+#     # 第三步：拼接成最终上下文
+#     # 8. 把所有去重后的文档，提取纯文本，用 --- 分隔开，拼接成一整段字符串
+#     return "\n\n---\n\n".join(doc.page_content.strip() for doc in unique_docs)
+
+
+# ============================================================
+# 格式化文档（升级版：每个 chunk 标注编号 + 文档名）
+# ============================================================
+def format_docs_with_chunks(docs):
+    """
+    将检索到的文档格式化为 LLM 可用的上下文，
+    同时给每个 chunk 加上 [chunk_N] 编号，方便 LLM 引用来源。
+    
+    参数:
+        docs: 检索器返回的 Document 列表
+    返回:
+        带编号的纯文本上下文字符串，示例:
+        [chunk_0] 来源：宫廷剧本全集.txt
+        燕光逸是当朝皇帝，居住在养心殿...
+        
+        [chunk_1] 来源：宫廷剧本全集.txt
+        太后日常居住于寿康宫...
+    """
+    # 第一步：过滤 + 去重（和原来一样）
     valid_docs = [
-        doc
-        for doc in docs 
-        # 过滤条件：长度>20 + 仅目标文档
-        if len(doc.page_content.strip()) > 20 
-        #生成器表达式和列表易混淆：生成器表达式用圆括号()，返回的是generator对象；列表用方括号[]，返回的是列表对象。生成器更节省内存，适合大数据量；列表适合需要多次访问的情况。
-        #any遇到一个True就break,返回True，效率更高；all需要全部True才行，效率较低
-        and any(allow_name in doc.metadata["source"] for allow_name in ALLOW_DOC_NAMES)
+        doc for doc in docs
+        if len(doc.page_content.strip()) > 20
+        and any(allow_name in doc.metadata.get("source", "")
+                for allow_name in ALLOW_DOC_NAMES)
     ]
     
-    # 第二步：去重（去除内容完全一样的文档）
-    # 1. 定义空列表：用来存放【去重后】的有效文档片段
     unique_docs = []
-
-    # 2. 定义空集合：专门用来记录【已经出现过的文本内容】
-    # 集合(set)的特点：查询速度极快，自动不允许重复值
     seen_contents = set()
-
-    # 3. 遍历【第一步过滤好的有效文档】，逐个检查是否重复
     for doc in valid_docs:
-        # 4. 取出当前文档的文本内容，并用strip()清洗首尾空格/换行
         content = doc.page_content.strip()
-
-        # 5. 关键判断：如果这段文本【从来没出现过】
         if content not in seen_contents:
-            # 6. 把这段文本标记为「已出现」，存入集合
             seen_contents.add(content)
-            # 7. 把这个不重复的文档，加入最终的去重列表
             unique_docs.append(doc)
+    
+    # 第二步：给每个 chunk 标编号 + 文档名
+    chunks = []
+    for i, doc in enumerate(unique_docs):
+        # 从 metadata 里取文档名，如果取不到就用 "未知文档"
+        source_name = doc.metadata.get("source", "未知文档")
+        # 构建带编号的 chunk：[chunk_N] 来源：xxx.txt
+        #两个相邻的字符串字面量（中间无运算符），会被自动拼接成一个完整字符串，所以这里的换行和缩进不会影响最终输出的格式，反而让代码更清晰易读了。
+        chunk_text = (
+            f"[chunk_{i}] 来源：{source_name}\n"
+            f"{doc.page_content.strip()}"
+        )
+        chunks.append(chunk_text)
+    
+    # 用 --- 分隔，方便 LLM 区分不同 chunk
+    return "\n\n---\n\n".join(chunks)
 
-    # 第三步：拼接成最终上下文
-    # 8. 把所有去重后的文档，提取纯文本，用 --- 分隔开，拼接成一整段字符串
-    return "\n\n---\n\n".join(doc.page_content.strip() for doc in unique_docs)
+
+# 保留旧函数做兼容（其他地方可能调用 format_docs）
+def format_docs(docs):
+    """旧版兼容，内部调新版"""
+    return format_docs_with_chunks(docs)
+
+
 
 # ====================== 新增：查询重写函数 ======================
 def rewrite_query(input_dict: dict) -> str:# ✅ 改成接收字典，不是字符串
@@ -262,7 +329,6 @@ def get_rag_chain():
     #     | StrOutputParser()
     # )
 
-
     # # 新版标准RAG链 LangChain 专用流水线语法（LCEL）
     # #把「检索文档→填提示词→AI 答题→转字符串」打包成一条全自动链条
     # #符号 | = 管道符（上一步输出 → 下一步输入）
@@ -292,24 +358,13 @@ def get_rag_chain():
             #"seed": SEED # 新版 LangChain 1.3.1 的 MMR 检索器参数改成了 "seed"，之前的 "random_state" 已经废弃了
         }
     )
-    # # ------------------- 第一步：生成初步答案 -------------------
-    # generate_answer_chain = (
-    #     {
-    #         "context": RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs),
-    #         "question": RunnableLambda(lambda x: x["question"])
-    #     }
-    #     | get_prompt()
-    #     | get_llm()
-    #     | StrOutputParser()
-    # )
-
 
     # ------------------- 第一步：生成初步答案（仅检索一次） -------------------
     generate_answer_chain = (
         RunnablePassthrough.assign(
             # 只做一次检索，生成 context
             ##检索器（向量库）很笨，必须用规整、无歧义、精准的改写问题才能找到正确文档；
-            context=RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs)
+            context=RunnableLambda(lambda x: x["rewritten_question"]) | retriever | RunnableLambda(format_docs_with_chunks)
         )
         | RunnablePassthrough.assign(
             # 复用 context 生成答案
@@ -350,6 +405,26 @@ def get_rag_chain():
 
     return rag_chain, retriever,generate_answer_chain,self_correction_chain
 
+# ============================================================
+# 引用标注校验（输出护栏）面试题时可以说：
+# "我们设计了一个输出护栏，专门校验 LLM 的回答是否正确标注了引用来源，如果完全没有标注，就会触发重试机制，要求 LLM 重新生成答案。"
+# ============================================================
+def check_citations(answer: str) -> bool:
+    """
+    检查 LLM 回答是否包含 [chunk_N] 格式的引用标注。
+    
+    如果没有引用 → LLM 可能忽略了你给的标注规则 → 建议重新生成。
+    
+    参数:
+        answer: LLM 生成的回答文本
+    返回:
+        True  → 至少有一个 [chunk_N] 引用
+        False → 完全没有引用标注
+    """
+    import re
+    #\d+ 匹配一个或多个数字，\[ 和 \] 匹配字面上的方括号，整体匹配 [chunk_0]、[chunk_1] 等格式的引用标注
+    return bool(re.search(r"\[chunk_\d+\]", answer))
+
 
 # ------------------- 函数4：交互式问答Demo -------------------
 def interactive_qa():
@@ -372,6 +447,8 @@ def interactive_qa():
         print("\n正在检索答案，请稍候...")
         answer = qa_chain.invoke(question)
         print(f"\n回答：{answer}")
+        if not check_citations(answer):
+            print("⚠️ 注意：本次回答未标注引用来源")
 
 # ------------------- 函数4：交互式问答Demo（测试版：显示两次答案） -------------------
 #测试完毕应注释掉使用原版函数，避免重复打印重写日志
@@ -392,6 +469,13 @@ def interactive_qa():
             print("感谢使用，再见！")
             break
         question = question.strip()
+
+        reject_msg = apply_input_guard(question)
+
+        if reject_msg:
+            print(f"\n回答：{reject_msg}")
+            continue
+
         
         print("\n正在检索答案，请稍候...")
 
@@ -405,7 +489,10 @@ def interactive_qa():
         raw_answer = step3_result["answer"]
         #拿到改写问题对应的检索文档（给后续纠正链使用）
         source_docs = retriever.invoke(step2_result["rewritten_question"])
-        
+        if not source_docs:
+            print("\n回答：抱歉，当前文档库为空，请先导入文档。")
+            continue
+
         # 步骤2：矫正阶段检索+生成最终答案
         final_answer = self_correction_chain.invoke(step3_result)
 
