@@ -171,6 +171,7 @@ def get_client(model: ModelType = ModelType.DEEPSEEK) -> LLMClient:
     """获取全局 LLM 客户端（单例）"""
     global _global_client
     if _global_client is None:
+        #获取大模型客户端实例，默认模型是 DeepSeek，如果需要切换模型，可以在调用 chat() 时传 model 参数，或者先 get_client() 后再 set_default_model()
         _global_client = LLMClient(default_model=model)
     return _global_client
 

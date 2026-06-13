@@ -129,7 +129,7 @@ class CostTracker:
         total_input = 0
         total_output = 0
         total_cost = 0.0
-
+        #_records是一个列表，里面的每个元素都是字典，每个字典都有 model、input_tokens、output_tokens、cost 等字段
         for r in self._records:
             model = r["model"]
             if model not in by_model:
@@ -168,6 +168,7 @@ class CostTracker:
         """JSONL 格式追加：每行一个 JSON 对象"""
         log_path = self._get_log_file()
         with open(log_path, "a", encoding="utf-8") as f:
+            # Python 字典对象 entry → 转换成 JSON 格式字符串，ensure_ascii=False 保持中文不被转义，然后写入文件并换行
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
@@ -185,17 +186,4 @@ def get_tracker(log_dir: str = "./logs") -> CostTracker:
     return _global_tracker
 
 
-# ========== 集成到 LLMClient ==========
-# 在 core/llm_client.py 的 chat() 方法里加 3 行即可实现自动统计：
-#
-#   from core.cost_tracker import get_tracker
-#   tracker = get_tracker()
-#
-#   response = client.chat.completions.create(...)
-#   usage = response.usage
-#   tracker.record(
-#       model=self._current_model.value,
-#       input_tokens=usage.prompt_tokens,      # OpenAI SDK 返回字段
-#       output_tokens=usage.completion_tokens,
-#       extra={"query": prompt[:80]}           # 截前80字方便追溯
-#   )
+
