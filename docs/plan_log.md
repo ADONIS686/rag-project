@@ -1171,7 +1171,7 @@ self_correction_chain：基于原始答案做修正，生成最终答案 final_a
 3. 多模型切换：支持云端/本地模型自由切换，降低成本
 
 ---
-# Day13（6.3 周三）✅ 完成
+# Day13✅ 完成
 
 ## 完成内容
 1. 创建 `core/vector_store_manager.py`，实现多文档向量库独立管理（每份文档独立 collection，支持按文档名过滤检索）
@@ -1224,7 +1224,7 @@ git push
 
 ---
 
-# Day16（6.6 周六）— Token统计 + 规则分块 + 全链路日志
+# Day16— Token统计 + 规则分块 + 全链路日志
 
 ## 完成内容
 1. **Token统计**：新建 `core/cost_tracker.py`，按模型不同自动计费，内存统计 + JSONL持久化
@@ -1255,7 +1255,7 @@ git push
 
 ---
 
-# Day17（6.7 周日 ⚠️不休）— Guardrails 全天
+# Day17— Guardrails 全天
 
 ## 完成内容
 1. **新建 `core/guardrails.py`**：三层输入护栏
@@ -1365,7 +1365,7 @@ git push
 
 ---
 
-# Day18.5 完整日志（6.13 周六）— 代码梳理 + 全线精简 + 计划重整
+# Day18.5 完整日志（周六）— 代码梳理 + 全线精简 + 计划重整
 
 ## 一、完成事项
 
@@ -1425,4 +1425,29 @@ git add .
 git commit -m "Day18.5：全项目梳理 + 护栏精简 + Prompt通用化 + 计划重整 + 接线日安排"
 git push
 ```
+
+
+---
+
+# Day20 启动— 接线日前半段
+
+## 完成内容
+
+1. **架构梳理**：明确 `vector_store.py`（适配层）和 `vector_store_manager.py`（引擎层）分工，两文件都保留，Day24 再合并。
+
+2. **day20_plan.md 修正**：伪代码三处函数名错误已修复。
+
+3. **文档管线首次跑通**：`create_vector_store()` 新管线（marker_parser → chunker → vector_store_manager）首次执行。
+
+4. **Chunker 超长段 bug 修复**：
+   - 现象：DashScope embedding `Range of input length should be [1, 2048]`
+   - 根因：`rule_chunk()` 对超长单段落原样放行
+   - 修复：`utils/chunker.py` 超长段强制按 chunk_size 切多块，段内 overlap，段间不重叠
+
+## 修改文件
+- `utils/chunker.py`：超长段强制拆分
+- `F:\AIStudy\study\day20_plan.md`：修正函数名
+
+## 明日继续
+Day20 接线②（LLM 切换）+ 接线③（缓存）+ 全链路验证
 

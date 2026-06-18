@@ -25,10 +25,11 @@ from config.settings import (
     CHUNK_SIZE,
     CHUNK_OVERLAP,
     VECTOR_DB_PATH,
-    COLLECTION_NAME
+    COLLECTION_NAME,
+    ALLOW_DOC_NAMES
 )
 #自动调用文档预处理函数，生成processed_documents.json（如果已经有了就覆盖掉，保持最新）
-from utils.document_loader import load_documents_from_folder, clean_text, filter_short_documents, save_documents_to_json
+#from utils.document_loader import load_documents_from_folder, clean_text, filter_short_documents, save_documents_to_json
 # ------------------- 函数1：加载Day2预处理好的文档 【修改：置空废弃，不再使用】-------------------
 def load_documents_from_json(file_path: str) -> list[Document]:
     """
@@ -81,20 +82,46 @@ def create_vector_store() -> Chroma:
     """
     # ==========【新增：全套自动预处理逻辑】==========
     print("🔄 自动执行文档预处理...")
-    # 1. 自动加载白名单文档
-    raw_docs = load_documents_from_folder("data/raw")
-    # 2. 自动清洗
-    cleaned_docs = []
-    for doc in raw_docs:
-        doc.page_content = clean_text(doc.page_content)
-        cleaned_docs.append(doc)
-    # 3. 过滤短文本
-    filtered_docs = filter_short_documents(cleaned_docs)
-    # 4. 自动覆盖生成processed_documents.json
-    save_documents_to_json(filtered_docs, "data/processed_documents.json")
-    documents = filtered_docs
-    split_docs = split_documents(documents)
-    documents = split_docs
+    # 新：Marker 解析 + 规则分块 + 多文档隔离入库
+    import os
+    from utils.marker_parser import parse_document
+    from utils.chunker import rule_chunk
+    from core.vector_store_manager import VectorStoreManager
+
+    # 清理旧向量库
+    if os.path.exists(VECTOR_DB_PATH):
+        shutil.rmtree(VECTOR_DB_PATH)
+        print("🗑️ 已清理旧向量库")
+
+    # 逐文档：Marker解析 → 规则分块 → 独立入库
+    manager = VectorStoreManager()
+    raw_dir = "data/raw"
+    for file_name in os.listdir(raw_dir):
+        if file_name not in ALLOW_DOC_NAMES:
+            continue
+        file_path = os.path.join(raw_dir, file_name)
+        if not os.path.isfile(file_path):
+            continue
+        
+        print(f"📄 处理: {file_name}")
+        docs = parse_document(file_path)    # ① Marker AI 解析
+        chunks = rule_chunk(docs)           # ② 规则分块（表格/图片透传）
+        manager.import_document(file_name, chunks)  # ③ 多文档隔离入库
+        print(f"   ✅ {len(chunks)} 个 chunk 入库")
+    # # 1. 自动加载白名单文档
+    # raw_docs = load_documents_from_folder("data/raw")
+    # # 2. 自动清洗
+    # cleaned_docs = []
+    # for doc in raw_docs:
+    #     doc.page_content = clean_text(doc.page_content)
+    #     cleaned_docs.append(doc)
+    # # 3. 过滤短文本
+    # filtered_docs = filter_short_documents(cleaned_docs)
+    # # 4. 自动覆盖生成processed_documents.json
+    # save_documents_to_json(filtered_docs, "data/processed_documents.json")
+    # documents = filtered_docs
+    # split_docs = split_documents(documents)
+    # documents = split_docs
     
     # ==========【新增：自动删除旧向量库】==========
     if os.path.exists(VECTOR_DB_PATH):

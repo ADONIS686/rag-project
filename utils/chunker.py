@@ -115,19 +115,33 @@ def rule_chunk(
                     }
                 ))
                 chunk_id += 1
-
-                # 重叠机制：上一个 chunk 末尾留 overlap 个字符，
-                # 避免一句话刚好被切在两块边界上
+                # 重叠机制：上一个 chunk 末尾留 overlap 个字符
                 overlap_text = (
                     current_chunk[-chunk_overlap:]
                     if len(current_chunk) > chunk_overlap
                     else ""
                 )
-                current_chunk = overlap_text + content + "\n\n"
+                current_chunk = ""
             else:
-                # 防御性编程：如果 current_chunk 之前是空的（比如第一个段落就超长），直接放内容，不用重叠
-                # 单段就超 chunk_size 了，也能处理
-                current_chunk = content + "\n\n"
+                overlap_text = ""
+            # 如果新段落本身就超过 chunk_size，当场强制拆分成多个 chunk
+            if len(content) > chunk_size:
+                for i in range(0, len(content), chunk_size - chunk_overlap):
+                    sub = content[i:i + chunk_size]
+                    prefix = overlap_text if i == 0 else ""
+                    chunks.append(Document(
+                        page_content=prefix + sub,
+                        metadata={
+                            "source": current_source,
+                            "block_type": "text",
+                            "chunk_id": chunk_id,
+                        }
+                    ))
+                    chunk_id += 1
+                current_chunk = ""  # 已经全部落盘，不需要攒着了
+            else:
+                # 段落本身不超长，放到 current_chunk 里，带上 overlap
+                current_chunk = overlap_text + content + "\n\n"
 
     # ================================================================
     # 最后一片：如果还有没落盘的文本，收尾

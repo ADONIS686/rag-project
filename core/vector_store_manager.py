@@ -187,6 +187,7 @@ class VectorStoreManager:
             Path 对象，比如 Path("chroma_db/wenben1"）
         """
         # 先净化文件名，再拼接到根目录下
+        #调用类内部的 _sanitize_name() 工具方法，对原始文档名做「净化处理」，得到一个可以安全用作目录名、集合名的字符串，赋值给 safe_name
         safe_name = self._sanitize_name(doc_name)
         return self.persist_root / safe_name
 
@@ -240,6 +241,8 @@ class VectorStoreManager:
         print(f"  ✅ 向量库已就绪: {doc_name} (路径: {collection_path})")
 
         return store
+    
+    
 
     def add_documents(self, doc_name: str, documents: List[Document]) -> None:
         """
@@ -340,6 +343,7 @@ class VectorStoreManager:
             target_docs = doc_filter
         else:
             # 搜所有已加载到内存的文档
+            #取出实例内部字典 _stores 的所有键，转换为列表后赋值给 target_docs。
             target_docs = list(self._stores.keys())
 
         # 安全检查：没有可搜的文档就直接返回空列表

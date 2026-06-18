@@ -112,7 +112,7 @@ def save_documents_to_json(documents: list[Document], output_path: str):
             "page_content": doc.page_content,
             "metadata": doc.metadata
         })
-
+ 
     # 保存为JSON文件，ensure_ascii=False避免中文乱码 ascii不启动 indent是缩进=2让文件更易读
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(docs_json, f, ensure_ascii=False, indent=2)

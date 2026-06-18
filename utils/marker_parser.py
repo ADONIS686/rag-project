@@ -70,8 +70,7 @@ def parse_pdf_with_marker(file_path: str) -> List[Document]:
     # 打印处理进度，让用户知道程序正在运行
     print(f"  🔍 正在解析PDF: {os.path.basename(file_path)}")
     
-    # 统一转换为绝对路径也即是文件的完整路径，避免后续处理中文件找不到的问题
-    # 解决不同运行目录下相对路径找不到文件的问题
+    # 统一转换为绝对路径也即是文件的完整路径，解决不同运行目录下相对路径找不到文件的问题
     file_path = str(Path(file_path).resolve())
 
     # 初始化PDF转换器 首次运行会自动下载OCR、布局分析等AI模型（约几分钟，仅下载一次）
