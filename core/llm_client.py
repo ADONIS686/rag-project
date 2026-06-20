@@ -49,12 +49,12 @@ class LLMClient:
         ModelType.QWEN: {
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "api_key_env": "DASHSCOPE_API_KEY",
-            "model_name": "qwen-plus",
+            "model_name": "qwen-plus-2025-12-01",
         },
         ModelType.KIMI: {
             "base_url": "https://api.moonshot.cn/v1",
             "api_key_env": "KIMI_API_KEY",
-            "model_name": "moonshot-v1-2.6",
+            "model_name": "kimi-k2.6",
         },
     }
 

@@ -1429,6 +1429,7 @@ git push
 
 ---
 
+
 # Day20 启动— 接线日前半段
 
 ## 完成内容
@@ -1451,3 +1452,54 @@ git push
 ## 明日继续
 Day20 接线②（LLM 切换）+ 接线③（缓存）+ 全链路验证
 
+---
+
+# Day20 接线日②｜2026-06-20
+
+## 完成内容
+
+### 1. 模型配置统一
+- `llm_client.py:52`：qwen model_name → `qwen-plus-2025-12-01`（免费额度到期后用带日期后缀的版本）
+- `llm_factory.py`：删除重复的 MODEL_CONFIG 字典，改为 `LLMClient.MODEL_CONFIG[_TYPE_MAP[model_type]]` — 以后换模型只改 `llm_client.py` 一处
+- `base_rag.py:15`：删除失效的 `MODEL_CONFIG` import
+
+### 2. CITATION_INSTRUCTION 修复
+- 根因：`get_prompt()` 里 `{CITATION_INSTRUCTION}` 被 `PromptTemplate.from_template()` 当做变量占位符，每次 invoke 要求传入
+- 修复：`template.replace("{CITATION_INSTRUCTION}", CITATION_INSTRUCTION)` 写死为 Python 常量，用 `.replace()` 而非 `.format()` 避免 `{context}` `{question}` 被误匹配
+
+### 3. 多文档检索器管道桥接
+- `rag/vector_store.py`：新增 `MultiDocRetriever(BaseRetriever)` 类，实现 `_get_relevant_documents()` 桥接到 `VectorStoreManager.search()`
+- `load_vector_store()` 重写：不再返回 Chroma 实例，改为 `VectorStoreManager()` → `MultiDocRetriever(manager)`
+- `base_rag.py`：`get_rag_chain()` 里 7 行 `as_retriever(MMR)` 简化为 1 行 `load_vector_store(top_k=...)`
+
+### 4. VectorStoreManager 自动加载磁盘集合
+- 问题：每次 `VectorStoreManager()` 新建实例，`self._stores` 是空字典，即使磁盘上 `chroma_db/wenben1/` 已有数据也搜不到
+- 修复：新增 `_auto_load_collections()` 方法 + `__init__` 末尾调用，扫描 `persist_root` 目录自动调用 `create_collection(entry.name)` 加载
+- 额外修复：`search()` 里 `store = self._stores.get(doc_name)` → `or self._stores.get(self._sanitize_name(doc_name))`，兼容 `doc_filter=["wenben1.txt"]` 查 key 为 `"wenben1"` 的情况
+
+### 5. vector_store.py __main__ 重写
+- 修复 `search()` 返回值类型错误（dict 列表 → 用 `result['score']` 而非 `(doc, score)` 解包）
+- 加 `SEARCH_DOC = None` 开关，方便切全部/单文档检索
+
+### 6. 面试笔记更新
+- 新增 Q17：LangChain 管道中 MultiDocRetriever 运行原理（模板方法模式、管道数据流）
+
+### 7. main.py 全链路跑通 ✅
+- 启动 → 自动加载向量库 → 查询重写 → 检索（20条结果）→ 生成答案 → 显示来源
+
+## 修改文件
+- `core/llm_client.py`
+- `core/llm_factory.py`
+- `rag/base_rag.py`
+- `rag/vector_store.py`
+- `core/vector_store_manager.py`
+
+## 剩余
+- cache.py 集成（4行插入 interactive_qa()）
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day20 接线日：模型配置统一 + 检索器管道桥接 + 向量库自动加载 + 全链路跑通"
+git push
+```

@@ -3,7 +3,7 @@ from rag.base_rag import interactive_qa
 
 if __name__ == "__main__":
     print("="*60)
-    print("          宫廷剧本RAG问答助手 v1.0")
+    print("          SmartDoc RAG —— 智能文档检索增强生成系统")
     print("="*60)
     print("使用说明：")
     print("1. 输入你的问题，按回车得到答案")

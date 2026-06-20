@@ -105,6 +105,7 @@ class VectorStoreManager:
         # 向量模型实例（初始为 None，第一次调用 self.embedding 时才会真正加载）
         # 这样做是为了"延迟加载"——如果永远不调用 search/add，就不必加载模型，省内存
         self._embedding = None
+        self._auto_load_collections()
 
     # ---------- 内部工具方法（以下划线开头，表示"内部使用，外部不需要直接调用"）----------
 
@@ -166,6 +167,16 @@ class VectorStoreManager:
         name = re.sub(r'[^\w\u4e00-\u9fff-]', '_', name)
 
         return name
+
+    def _auto_load_collections(self):
+        """扫描 persist_root，自动加载磁盘上已有的文档向量库到内存"""
+        if not self.persist_root.exists():
+            return
+        #遍历该目录下所有直接子项的 Path 对象列表，赋值给 entries。
+        for entry in self.persist_root.iterdir():
+            #entry必须是一个目录，并且目录名不在当前内存管理的向量库实例字典 _stores 中，才会调用 create_collection 方法创建一个新的向量库实例。
+            if entry.is_dir() and entry.name not in self._stores:
+                self.create_collection(entry.name)
 
     def _get_collection_path(self, doc_name: str) -> Path:
         """
@@ -355,7 +366,7 @@ class VectorStoreManager:
         all_results = []
         for doc_name in target_docs:
             # 拿到这份文档对应的向量库实例
-            store = self._stores.get(doc_name)
+            store = self._stores.get(doc_name) or self._stores.get(self._sanitize_name(doc_name))
             if store is None:
                 print(f"  ⚠️  文档 {doc_name} 的向量库未加载，跳过")
                 continue

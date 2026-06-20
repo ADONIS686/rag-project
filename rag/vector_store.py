@@ -13,6 +13,7 @@ from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 # 导入Document对象
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 # 导入json模块，加载Day2的预处理文档
 import json
 # ==========【新增导入删库模块】==========
@@ -71,7 +72,7 @@ def split_documents(documents: list[Document]) -> list[Document]:
 # ==========【修改1：删掉传入参数，无参调用】==========
 # 旧：def create_vector_store(documents: list[Document]) -> Chroma:
 # 新：
-def create_vector_store() -> Chroma:
+def create_vector_store() -> None:
     """
     全自动：自动预处理文档+生成json+清旧库+建新库
     """
@@ -80,18 +81,26 @@ def create_vector_store() -> Chroma:
     :param documents: 分块后的文档片段列表
     :return: Chroma向量库对象
     """
+    # ==========【新增：自动删除旧向量库】==========
+    if os.path.exists(VECTOR_DB_PATH):
+        import gc, time
+        for attempt in range(3):
+            try:
+                shutil.rmtree(VECTOR_DB_PATH)
+                print("🗑️ 已清理旧向量库，避免旧数据残留")
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.5)
+        else:
+            print("⚠️ 清理旧向量库失败（文件被占用），将跳过清理直接导入")
+
     # ==========【新增：全套自动预处理逻辑】==========
     print("🔄 自动执行文档预处理...")
     # 新：Marker 解析 + 规则分块 + 多文档隔离入库
-    import os
     from utils.marker_parser import parse_document
     from utils.chunker import rule_chunk
     from core.vector_store_manager import VectorStoreManager
-
-    # 清理旧向量库
-    if os.path.exists(VECTOR_DB_PATH):
-        shutil.rmtree(VECTOR_DB_PATH)
-        print("🗑️ 已清理旧向量库")
 
     # 逐文档：Marker解析 → 规则分块 → 独立入库
     manager = VectorStoreManager()
@@ -108,6 +117,8 @@ def create_vector_store() -> Chroma:
         chunks = rule_chunk(docs)           # ② 规则分块（表格/图片透传）
         manager.import_document(file_name, chunks)  # ③ 多文档隔离入库
         print(f"   ✅ {len(chunks)} 个 chunk 入库")
+    print(f"✅ 全部文档导入完成")
+
     # # 1. 自动加载白名单文档
     # raw_docs = load_documents_from_folder("data/raw")
     # # 2. 自动清洗
@@ -122,50 +133,58 @@ def create_vector_store() -> Chroma:
     # documents = filtered_docs
     # split_docs = split_documents(documents)
     # documents = split_docs
-    
-    # ==========【新增：自动删除旧向量库】==========
-    if os.path.exists(VECTOR_DB_PATH):
-        shutil.rmtree(VECTOR_DB_PATH)
-        print("🗑️ 已清理旧向量库，避免旧数据残留")
 
-    # 初始化向量嵌入模型（把文本转成数字向量）
-    embeddings = DashScopeEmbeddings(
-        model=EMBEDDING_MODEL_NAME,
-        dashscope_api_key=DASHSCOPE_API_KEY
-    )
+    # # 初始化向量嵌入模型（把文本转成数字向量）
+    # embeddings = DashScopeEmbeddings(
+    #     model=EMBEDDING_MODEL_NAME,
+    #     dashscope_api_key=DASHSCOPE_API_KEY
+    # )
     
-    # 创建向量库
-    vector_store = Chroma.from_documents(
-        documents=documents,
-        embedding=embeddings,
-        persist_directory=VECTOR_DB_PATH,
-        collection_name=COLLECTION_NAME
-    )
+    # # 创建向量库
+    # vector_store = Chroma.from_documents(
+    #     documents=documents,
+    #     embedding=embeddings,
+    #     persist_directory=VECTOR_DB_PATH,
+    #     collection_name=COLLECTION_NAME
+    # )
     
-    # 持久化保存到本地硬盘（下次不用重新创建）
-    #vector_store.persist()
-    print(f"新手提示：向量库创建成功，共存储{len(documents)}个文档块")
+    # # 持久化保存到本地硬盘（下次不用重新创建）
+    # #vector_store.persist()
+    # print(f"新手提示：向量库创建成功，共存储{len(documents)}个文档块")
     
-    return vector_store
+    #return vector_store
+
+# ------------------- 函数4：多文档检索器（LangChain 兼容）-------------------
+class MultiDocRetriever(BaseRetriever):
+    """LangChain 兼容检索器，对接 VectorStoreManager 多文档隔离检索"""
+    
+    def __init__(self, manager, top_k: int = 10, doc_filter=None):
+        super().__init__()
+        self._manager = manager
+        self._top_k = top_k
+        self._doc_filter = doc_filter
+
+    def _get_relevant_documents(self, query: str) -> list:
+        results = self._manager.search(
+            query, top_k=self._top_k, doc_filter=self._doc_filter
+        )
+        return [
+            Document(page_content=r["content"], metadata={"source": r["document_name"]})
+            for r in results
+        ]
+
 
 # ------------------- 函数4：加载已存在的本地向量库 -------------------
-def load_vector_store() -> Chroma:
+def load_vector_store(doc_filter=None, top_k: int = 10):
     """
-    【新手说明】：下次运行时直接加载本地已有的向量库，不用重新处理文档
-    :return: Chroma向量库对象
+    加载多文档向量库，返回 LangChain 兼容检索器
+    :param doc_filter: 只搜指定文档，如 ["wenben1.txt"]；None = 搜全部
+    :param top_k: 检索返回条数
+    :return: MultiDocRetriever（可直接用于 LangChain 链）
     """
-    embeddings = DashScopeEmbeddings(
-        model=EMBEDDING_MODEL_NAME,
-        dashscope_api_key=DASHSCOPE_API_KEY
-    )
-    
-    vector_store = Chroma(
-        persist_directory=VECTOR_DB_PATH,
-        embedding_function=embeddings,
-        collection_name=COLLECTION_NAME
-    )
-    
-    return vector_store
+    from core.vector_store_manager import VectorStoreManager
+    manager = VectorStoreManager()
+    return MultiDocRetriever(manager, top_k=top_k, doc_filter=doc_filter)
 
 # ------------------- 函数5：执行相似性查询 -------------------
 def similarity_search(vector_store: Chroma, query: str, top_k: int = 3) -> list[tuple[Document, float]]:
@@ -182,42 +201,38 @@ def similarity_search(vector_store: Chroma, query: str, top_k: int = 3) -> list[
 
 # ------------------- 测试代码（直接运行即可）-------------------
 if __name__ == "__main__":
-    # # 1. 加载Day2预处理好的文档
-    # documents = load_documents_from_json("data/processed_documents.json")
-    # print(f"加载文档数量：{len(documents)}")
-    
-    # # 2. 对文档进行分块
-    # chunks = split_documents(documents)
-    # print(f"分块后文档块数量：{len(chunks)}")
-    
-    # # 3. 创建向量库并保存到本地
-    # vector_store = create_vector_store(chunks)
+    # 1. 创建向量库（多文档隔离入库）
+    #create_vector_store()
 
-    # # 加载本地向量库（不用重新创建）
-    # vector_store = load_vector_store()
-    # print("向量库加载成功")
-    
-    #入口
-    vector_store = create_vector_store()
+    # 2. 用 VectorStoreManager 加载并检索
+    from core.vector_store_manager import VectorStoreManager
+    manager = VectorStoreManager()
 
-    # 测试几个不同的查询词（覆盖你文档的不同部分）
+    # 测试查询词
     test_queries = [
         "请介绍一下这个文档的主要内容",
-        "皇后是徐墙吗",
-        "皇帝有几个妃子",
-        "哪些妃子有孩子",
-        "皇帝的名字是什么"
     ]
     
-    # 循环测试每个查询
+    # 可选：指定只搜某个文档，None = 搜全部
+    SEARCH_DOC = "wenben1.txt"  # 改成 "wenben1.txt" 则只搜该文档
+    
     for query in test_queries:
         print(f"\n{'='*50}")
         print(f"查询问题：{query}")
+        if SEARCH_DOC:
+            print(f"搜索范围：{SEARCH_DOC}")
         print(f"{'='*50}")
         
-        results = similarity_search(vector_store, query)
+        results = manager.search(
+            query, top_k=3,
+            doc_filter=[SEARCH_DOC] if SEARCH_DOC else None
+        )
         
-        for i, (doc, score) in enumerate(results):
-            print(f"\n结果{i+1}（相似度分数：{score:.4f}，分数越低越相似）：")
-            print(f"内容：{doc.page_content[:300]}...")
-            print(f"来源文件：{doc.metadata['source']}")
+        if not results:
+            print("⚠️ 未检索到任何结果")
+            continue
+        
+        for i, result in enumerate(results):
+            print(f"\n结果{i+1}（相似度分数：{result['score']:.4f}，越低越相似）：")
+            print(f"内容：{result['content'][:300]}...")
+            print(f"来源：{result['document_name']} (chunk_{result['chunk_id']})")
