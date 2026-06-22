@@ -1495,11 +1495,50 @@ Day20 接线②（LLM 切换）+ 接线③（缓存）+ 全链路验证
 - `core/vector_store_manager.py`
 
 ## 剩余
-- cache.py 集成（4行插入 interactive_qa()）
+- cache.py 集成（4行插入 interactive_qa()）✅ 已完成（2026-06-22）
 
 ## Git 提交（待执行）
 ```bash
 git add .
 git commit -m "Day20 接线日：模型配置统一 + 检索器管道桥接 + 向量库自动加载 + 全链路跑通"
+git push
+```
+
+---
+
+# Day20 收尾：缓存集成完成｜2026-06-22
+
+## 完成内容
+
+### 1. cache.py 集成到 interactive_qa() ✅
+- 4行插入：查缓存 → 命中则跳过 LLM 调用 → 未命中则正常调用并写入缓存
+- 验证通过：`玩家是谁` → `[缓存命中 ⚡] 零 Token 消耗`
+
+### 2. 缓存系统核心概念吃透
+- **两层架构**：内存字典（`self._cache`）高速读写 + JSON 文件（`logs/cache.json`）持久化
+- **为什么全量加载到内存**：磁盘 IO 比内存慢 5-6 个数量级，缓存放内存才能 O(1) 查询
+- **为什么全量覆盖写**：JSON 格式不支持追加；全量写实现最简单、一致性最好；中小规模完全够用
+- **过期清理策略**：惰性删除（查询时检查 TTL，过期即删）+ 定期统计（`summary()` 显示命中率）
+
+### 3. 并发安全
+- `threading.Lock` 写锁：保护 `self._cache` 字典的增删改 + `_save_to_disk_unsafe()` 落盘
+- 读不加锁：Python 字典单次读取线程安全（GIL 保证），读多写少场景优化
+- 不可重入锁陷阱：内部 `_unsafe` 函数不加锁，由外层 `with self._lock` 统一保护
+
+### 4. 单例 + 懒加载
+- 模块级全局变量 `_cache_instance` + `get_cache()` 工厂函数
+- 单例保证全局唯一，懒加载减少启动开销
+
+### 5. 面试笔记更新
+- 新增 Q20：缓存架构设计面试高频问答（内存vs磁盘、全量写vs增量写、多线程安全、单例懒加载）
+
+## 修改文件
+- `rag/base_rag.py`：interactive_qa() 集成 cache 查询/写入 4行
+- `F:\AIStudy\study\interview_notes_rag.md`：新增 Q20
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day20收尾：cache集成完成 + 缓存命中验证 + 缓存架构面试笔记"
 git push
 ```

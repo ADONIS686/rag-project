@@ -13,6 +13,7 @@ import numpy as np
 from core.guardrails import apply_input_guard
 from core.cost_tracker import get_tracker
 from core.llm_factory import create_llm
+from core.cache import get_cache
 
 # 固定三方库随机种子，消除MMR检索随机性
 SEED = 42
@@ -372,6 +373,7 @@ def interactive_qa():
     升级功能：同时显示原始初步答案、最终修正答案，以及两轮检索对应的参考来源
     """
     qa_chain, retriever, generate_answer_chain, self_correction_chain= get_rag_chain()
+    cache = get_cache()
     print("="*50)
     print("RAG问答系统启动成功！")
     print("输入你的问题，输入'退出'结束程序")
@@ -410,6 +412,11 @@ def interactive_qa():
             print(f"\n回答：{reject_msg}")
             continue
 
+        cached = cache.get(question)
+        if cached is not None:
+            print(f"\n[缓存命中 ⚡] 零 Token 消耗")
+            print(f"\n回答：{cached}")
+            continue
         
         print("\n正在检索答案，请稍候...")
 
@@ -429,7 +436,7 @@ def interactive_qa():
 
         # 步骤2：矫正阶段检索+生成最终答案
         final_answer = self_correction_chain.invoke(step3_result)
-
+        cache.set(query=question, answer=final_answer, model=_RAG_MODEL)
         # 打印结果（去掉重复的重写打印）
         print(f"\n【原始初步答案】：{raw_answer}")
         print(f"\n【最终修正答案】：{final_answer}")

@@ -55,11 +55,12 @@ def _make_cache_key(query: str) -> str:
     """
     # strip + lower：忽略首尾空格和大小写差异，"燕光逸是谁" 和 " 燕光逸是谁 " 共享同一个 key
     raw = query.strip().lower()
+    #hexdigest()调用 MD5 哈希算法，输出类似：b0d23e4a7f9c1d8e0b3a5f7c9d2e1a4b （32位十六进制字符串）
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
 def _now_iso() -> str:
-    """返回当前时间的 ISO 8601 格式字符串（精确到秒）"""
+    """返回当前时间的 ISO 8601 格式字符串（精确到秒）时间对象 → 字符串"""
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
@@ -81,6 +82,7 @@ def _is_expired(expires_at_str: str) -> bool:
     if CACHE_TTL_DAYS == 0:
         return False  # TTL=0 表示永不过期
     try:
+        #字符串转回 datetime 对象，然后与当前时间比较
         expires_dt = datetime.strptime(expires_at_str, "%Y-%m-%dT%H:%M:%S")
         return datetime.now() > expires_dt
     except (ValueError, TypeError):
@@ -137,7 +139,7 @@ class RAGCache:
         """
         self.total_queries += 1
         key = _make_cache_key(query)
-
+        #self._cache: Dict[str, Dict[str, Any]]
         entry = self._cache.get(key)
         if entry is None:
             return None  # 直接 miss，不调 LLM，零成本
@@ -145,6 +147,7 @@ class RAGCache:
         # 惰性过期淘汰：只在被访问时才检查
         if _is_expired(entry.get("expires_at", "")):
             with self._lock:
+                #同一时间永远只有一个线程能执行里面的代码，保证操作是原子的
                 self._cache.pop(key, None)
                 self._save_to_disk_unsafe()  # 已在锁内，用不加锁版本
             return None
@@ -212,9 +215,11 @@ class RAGCache:
                 raw_data = json.load(f)
 
             # 逐条扫描，筛掉过期条目
-            valid_entries = 0
-            expired_entries = 0
+            valid_entries = 0  #合法条目数量
+            expired_entries = 0   #过期条目数量
+            #返回一个 dict_items 视图对象，每个元素是一个 (key, value) 格式的元组。
             for key, entry in raw_data.items():
+                #isinstance(待检查对象, 目标类型)
                 if not isinstance(entry, dict):
                     continue
                 if _is_expired(entry.get("expires_at", "")):
@@ -239,6 +244,9 @@ class RAGCache:
             # 确保 logs 目录存在
             CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                #json.dump()：JSON 序列化的「文件写入版」，直接把 Python 数据写到文件对象里，不用手动转字符串再写。
+                # 区分：json.dumps() 是转成字符串返回；json.dump() 是直接写文件
+                #indent=2按2个空格缩进格式化输出，ensure_ascii=False 允许中文正常写入而不是转义成 \uXXXX
                 json.dump(self._cache, f, ensure_ascii=False, indent=2)
         except Exception as e:
             # 磁盘写入失败不应该影响主流程，打印警告即可
