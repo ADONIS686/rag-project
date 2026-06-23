@@ -1542,3 +1542,50 @@ git add .
 git commit -m "Day20收尾：cache集成完成 + 缓存命中验证 + 缓存架构面试笔记"
 git push
 ```
+
+---
+
+# Day21（前半）：BM25 检索器 + RRF 混合检索｜2026-06-23
+
+## 完成内容
+
+### 1. `core/bm25_retriever.py`（新建）✅
+- `BM25Retriever` 类：`rank_bm25.BM25Okapi` 中文关键词检索器
+- 分词策略：`re.findall` 字符级分词（按中文字符 + 英文单词 + 数字），不用 jieba
+  - **选型依据**：小说文档含大量自创专有名词，jieba 词典覆盖不到会切错，BM25 的 TF-IDF 自带罕见字加权，字符级天然适配
+- 多文档隔离架构：每文档独立 BM25 实例，支持增量更新、互不干扰 IDF 计算
+- 返回格式与 `VectorStoreManager.search()` 一致（`List[Dict]`）
+- 持久化：`pickle.dump` 二进制保存索引
+
+### 2. `rag/hybrid_retriever.py`（新建）✅
+- `_rrf_fusion()` 函数：RRF 算法 `score = 1/(k+rank)`，`k=60`，用文本前 200 字做去重 key
+- `HybridRetriever(BaseRetriever)`：组合 BM25 + VectorStoreManager → RRF 融合 → LangChain 兼容
+- 依赖注入设计：BM25Retriever 实例从外部传入，HybridRetriever 只管融合
+
+### 3. 关键知识点消化
+- **BM25Okapi**：TF-IDF 词频统计，`get_scores()` 返回和语料顺序对应的分数数组
+- **corpus 二维列表**：`List[List[str]]`，外层是 chunk 列表，内层是分词后的 token 列表
+- **双层排序**：单文档内降序 + 跨文档全局排序，后者是多文档场景的必需步骤
+- **RRF vs 加权平均**：RRF 不对原始分数做归一化，只比排名，天然兼容 BM25 和向量两种不同尺度分数
+- **pickle vs json**：pickle 保存复杂对象（BM25 索引），json 保存基础数据（缓存配置）
+
+### 4. 易错点总结
+1. BM25 初始化必须传二维语料，查询打分传一维列表
+2. RRF 排名从 1 开始（`enumerate(..., start=1)`），从 0 会算错
+3. pickle 用 `wb`/`rb`，json 用 `w`/`r`
+4. JSON `ensure_ascii=False` + `encoding="utf-8"` 避免中文乱码
+
+## 修改文件
+- `core/bm25_retriever.py`（新建）
+- `rag/hybrid_retriever.py`（新建）
+
+## 明日继续
+- 改 `rag/vector_store.py` 的 `load_vector_store()`：创建 BM25Retriever 实例 → 构建索引 → 返回 HybridRetriever
+- 语义分块 + 全链路测试
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day21前半：BM25检索器 + RRF混合检索框架完成"
+git push
+```
