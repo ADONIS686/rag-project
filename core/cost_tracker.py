@@ -78,7 +78,13 @@ class CostTracker:
           本次调用的费用（元）
         """
         # 1. 查定价，算费用
-        price = PRICING.get(model, {"input": 0, "output": 0})
+        short_name = model
+        if model not in PRICING:
+            for key in PRICING:
+                if key in model:
+                    short_name = key
+                    break
+        price = PRICING.get(short_name, {"input": 0, "output": 0})
         cost_input = (input_tokens / 1_000_000) * price["input"]
         cost_output = (output_tokens / 1_000_000) * price["output"]
         total_cost = cost_input + cost_output

@@ -61,7 +61,7 @@ class BM25Retriever:
             doc_name: 文档名（如 "wenben1.txt"）
             chunks:   分块后的 Document 列表
         """
-        # ① 分词
+        # ① 对每个chunk的page_content进行分词，得到一个二维列表tokenized，每个元素是一个chunk的分词结果
         tokenized = [_tokenize(chunk.page_content) for chunk in chunks]
 
         # ② 构建 BM25 索引
@@ -78,8 +78,8 @@ class BM25Retriever:
             })
 
         # 存入实例
-        self._indexes[doc_name] = bm25
-        self._corpus[doc_name] = tokenized #分词后的chunk列表
+        self._indexes[doc_name] = bm25 #BM25Okapi实例
+        self._corpus[doc_name] = tokenized #chunk的page_content分词后的列表
         self._chunks[doc_name] = chunk_infos  #原始chunk信息
 
         print(f"  📇 BM25 索引已构建: {doc_name} ({len(tokenized)} 个 chunk)")
@@ -121,7 +121,7 @@ class BM25Retriever:
             return []
 
         all_results = []
-        tokenized_query = _tokenize(query)
+        tokenized_query = _tokenize(query) # 分词后的查询文本
 
         for doc_name in target_docs:
             bm25 = self._indexes.get(doc_name)
@@ -129,7 +129,7 @@ class BM25Retriever:
             if bm25 is None or chunks is None:
                 continue
 
-            # BM25 打分 eg. [8.1, 1.4, 0.0, 3.2, ...]
+            # BM25 打分 eg. [8.1, 1.4, 0.0, 3.2, ...]chunks里面有几个元素scores里面就有几个分数
             scores = bm25.get_scores(tokenized_query)
 
             # 取每份文档的 top_k

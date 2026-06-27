@@ -29,12 +29,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from typing import List
 from langchain_core.documents import Document
-
+from config.settings import (
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+)
 
 def rule_chunk(
     documents: List[Document],
-    chunk_size: int = 800,
-    chunk_overlap: int = 80,
+    chunk_size: int = CHUNK_SIZE,
+    chunk_overlap: int = CHUNK_OVERLAP,
 ) -> List[Document]:
     """
     对 marker 解析结果进行规则分块。

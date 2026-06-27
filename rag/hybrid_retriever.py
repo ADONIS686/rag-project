@@ -14,7 +14,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
+from core.vector_store_manager import VectorStoreManager
+from core.bm25_retriever import BM25Retriever
 from typing import List, Dict, Optional
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
@@ -103,8 +104,8 @@ class HybridRetriever(BaseRetriever):
 
     def __init__(
         self,
-        manager,           # VectorStoreManager 实例
-        bm25,              # BM25Retriever 实例
+        manager: VectorStoreManager,      # VectorStoreManager 实例
+        bm25: BM25Retriever,              # BM25Retriever 实例
         top_k: int = 20,
         doc_filter: Optional[List[str]] = None,
     ):
@@ -135,7 +136,7 @@ class HybridRetriever(BaseRetriever):
         return [
             Document(
                 page_content=r["content"],
-                metadata={"source": r["document_name"]},
+                metadata={"source": r.get("source", r["document_name"])},
             )
             for r in merged
         ]

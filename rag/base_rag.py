@@ -7,25 +7,16 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from config.settings import ALLOW_DOC_NAMES
-# 新增全局随机种子固定
-import random
-import numpy as np
 from core.guardrails import apply_input_guard
 from core.cost_tracker import get_tracker
 from core.llm_factory import create_llm
 from core.cache import get_cache
 
-# 固定三方库随机种子，消除MMR检索随机性
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
 
 
 # 导入你的向量库和配置
 from rag.vector_store import load_vector_store
 from config.settings import (
-    DASHSCOPE_API_KEY,
-    LLM_MODEL_NAME,
     TEMPERATURE,
     RETRIEVER_TOP_K
 )
@@ -74,24 +65,18 @@ QUERY_REWRITE_PROMPT = """
 #仅输出最终结果，禁止附加解释、推理、多余标点
 # ====================== 新增：自我纠正配置 ======================
 SELF_CORRECTION_PROMPT = """
-你是严格的答案审核员，结合用户问题与上下文文档，核验初步答案正误并修正。
+你是严格的答案校验员，只能基于下方给定的上下文文档修正答案，绝对禁止使用任何外部知识。
 
-【检查规则】
-0. 上下文中的 [chunk_N] 是引用标注编号，不是答案错误，不要因此判定答案不正确
-1.答案和文档内容、问题诉求完全匹配，直接原样输出
-2.如果答案中出现了文档里没有的内容，且无法根据文档推断出来，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
-3.如果答案错误，仅修正事实错误、关键信息缺漏，然后输出正确答案，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
-4.仅当上下文完全不存在和问题相关的描述、线索、行为记录时，才输出：文档中没有明确说明；存在相关线索、行为、场景描述时，必须基于已有内容作答。
-5.如果你要改动原答案，仅输出修正后的「正确答案」，严格禁止输出任何解释、推理过程、修改痕迹、原答案内容、额外标点或多余文字，禁止输出思考过程
-6.如果不需要改动原答案，仅输出原答案，禁止在原答案基础上添加任何附加解释、推理、多余标点
-7.字面无明确佐证的内容且无法根据文档推断出来，不擅自增补进答案。
-8.禁止无文档依据在原答案基础上做推测、推断类补充，要以原文为主。
-
+【校验步骤（必须严格执行）】
+第一步：逐一核对初步答案中的所有人名、地名、事件、书名，确认每一项都在上下文文档里出现过。
+第二步：如果有任何内容或者额外的符号字母比如[chunk_数字]不在上下文里，就是幻觉，必须全部删除，只保留上下文能支撑的内容。
+第三步：如果初步答案有信息遗漏，从上下文中补充对应的关键信息；如果初步答案正确，直接原样输出。
+第四步：只输出最终修正后的答案正文，不要解释、不要推理、不要标注修改过程。
 
 用户问题：
 {question}
 
-上下文：
+上下文文档：
 {context}
 
 初步答案：
@@ -99,6 +84,34 @@ SELF_CORRECTION_PROMPT = """
 
 最终答案：
 """
+# SELF_CORRECTION_PROMPT = """
+# 你是严格的答案审核员，结合用户问题与上下文文档，核验初步答案正误并修正。
+
+# 【检查规则】
+# 0. 上下文中的 [chunk_N] 是引用标注编号，不是答案错误，不要因此判定答案不正确
+# 0b. 如果初步答案是"文档中没有明确说明""超出范围""无法回答"等兜底回复，且上下文中确实没有能唯一确定答案的明确线索，禁止强行编造答案，直接原样输出初步答案
+# 1.答案和文档内容、问题诉求完全匹配，直接原样输出
+# 2.如果答案中出现了文档里没有的内容，且无法根据文档推断出来，说明答案错误，必须修正；如果答案中缺少了文档里明确提到的关键信息，说明答案不完整，必须补齐
+# 2b.修正答案时，只能使用上下文文档中实际出现的人名、地名、术语。禁止编造文档中不存在的任何名称
+# 3.如果答案错误，仅修正事实错误、关键信息缺漏，然后输出正确答案，**禁止在原答案基础上补充无关细节、背景推断、额外解读**
+# 4."文档中没有明确说明"仅用于文档确实对此话题零提及的情况；如果文档中出现了相关人名、事件、场景，即使没有一句话直接回答用户问题，也必须基于已出现的信息整合回答，严禁用"没有明确说明"敷衍
+# 5.如果你要改动原答案，仅输出修正后的「正确答案」，严格禁止输出任何解释、推理过程、修改痕迹、原答案内容、额外标点或多余文字，禁止输出思考过程
+# 6.如果不需要改动原答案，仅输出原答案，禁止在原答案基础上添加任何附加解释、推理、多余标点
+# 7.字面无明确佐证的内容且无法根据文档推断出来，不擅自增补进答案。
+# 8.禁止无文档依据在原答案基础上做推测、推断类补充，要以原文为主。
+
+
+# 用户问题：
+# {question}
+
+# 上下文：
+# {context}
+
+# 初步答案：
+# {answer}
+
+# 最终答案：
+# """
 
 
 # ====================== 1. 初始化大模型 ======================
@@ -127,31 +140,17 @@ def get_llm(temperature: float = None):
 def get_prompt():
     template =f"""
 你是一个文档问答助手，仅依托提供的上下文文档作答。
-适用于各类文档：小说、技术文档、论文、剧本、新闻等。
 
-【基础作答准则】
-1. 所有内容均取自文档原文，不得使用自身知识，严禁编造、脑补文档未出现的信息
-2. 如果答案分散在多个文档片段中，可以从各片段中提取相关信息，整合归纳后作答（这不算编造，是正常的信息整合）
-3. 全面提取相关信息，不刻意遗漏细节；文档中确实没有相关内容时，回复：文档中没有明确说明
-4. 涉及人物/实体时，以文档中的正式名称为准；介绍时同步给出名称与关联信息（如身份、角色、定义等），表述客观平实
-5. 依据文档内容合理梳理逻辑，仅结合已有文本关联信息整合答案
+【最高优先级规则】
+你只能使用下方【上下文文档】里的内容回答问题，绝对禁止使用你自身的任何知识、常识、小说储备。
+如果上下文里没有答案，就如实说明，绝对不可以编造人物、情节、书名。
+所有引用标注必须对应上下文里真实存在的 [chunk_N] 编号以及文档来源，禁止伪造引用。
 
-【术语与名称规范】
-6. 使用文档中出现的原文术语，不做同义替换。不同文档可能对同一概念用不同名称，以当前文档为准
-7. 人物关系、实体归属、概念定义等，以文档呈现内容为准，不私自预设或引入外部知识
-
-【内容处理】
-8. 涉及地点、场景、事件时，仅依据文档实际出现的内容作答，不凭空补充
-9. 涉及事件缘由、过程、结果，严格依照文档信息通顺梳理；技术文档中的步骤、参数、配置原样引用
-
-【输出格式要求】
-10. 直接给出答案，无需额外开头铺垫语句（如"根据文档""以下是答案"等）
-11. 多个条目使用分号或编号分隔，条理清晰即可
-12. 回答简洁直击重点，只回答提问的内容，禁止冗长啰嗦
-
-【通用禁止项】
-13. 不得脱离文档拓展延伸，不做主观评价解读
-14. 禁止删减关键有效信息作答
+【作答规则】
+1. 答案信息可以分散在多个片段中，必须整合所有相关片段后归纳回答，禁止因单个片段没有直接陈述句就声称"文档未说明"。
+2. 上下文中高频出现的人名、称谓，就是对应问题的核心答案，必须明确提取。
+3. 仅当所有上下文片段完全不相关、没有任何对应线索时，才可回复：文档中没有明确说明。
+4. 优先使用文档原文表述，不做同义替换，回答简洁直击重点，不要铺垫语句。
 
 
 【引用标注规则 — 必须严格遵守】
@@ -216,13 +215,6 @@ def format_docs_with_chunks(docs):
     
     # 用 --- 分隔，方便 LLM 区分不同 chunk
     return "\n\n---\n\n".join(chunks)
-
-
-# 保留旧函数做兼容（其他地方可能调用 format_docs）
-def format_docs(docs):
-    """旧版兼容，内部调新版"""
-    return format_docs_with_chunks(docs)
-
 
 
 # ====================== 新增：查询重写函数 ======================
@@ -331,42 +323,8 @@ def check_citations(answer: str) -> bool:
     return bool(re.search(r"\[chunk_\d+\]", answer))
 
 
-# ------------------- 函数4：交互式问答Demo -------------------
-def interactive_qa():
-    """
-    【新手说明】：启动交互式问答，输入问题得到答案，输入'退出'结束
-    """
-    qa_chain, retriever, generate_answer_chain, self_correction_chain= get_rag_chain()
-    print("="*50)
-    print("RAG问答系统启动成功！")
-    print("输入你的问题，输入'退出'结束程序")
-    print("="*50)
-    
-    while True:
-        question = input("\n请输入你的问题：")
-        if question.lower() in ["退出", "q"]:
-            tracker = get_tracker()
-            stats = tracker.summary()
-            if stats["total_calls"] > 0:
-                print(f"\n本次会话统计：")
-                print(f"  总调用次数：{stats['total_calls']}")
-                print(f"  总输入Token：{stats['total_input_tokens']}")
-                print(f"  总输出Token：{stats['total_output_tokens']}")
-                print(f"  总费用：¥{stats['total_cost']:.4f}")
-                for model, mstat in stats["by_model"].items():
-                    print(f"  [{model}] {mstat['calls']}次 ¥{mstat['cost']:.4f}")
-            print("感谢使用，再见！")
-            break
-        question = question.strip()
-        
-        print("\n正在检索答案，请稍候...")
-        answer = qa_chain.invoke(question)
-        print(f"\n回答：{answer}")
-        if not check_citations(answer):
-            print("⚠️ 注意：本次回答未标注引用来源")
 
-# ------------------- 函数4：交互式问答Demo（测试版：显示两次答案） -------------------
-#测试完毕应注释掉使用原版函数，避免重复打印重写日志
+# ------------------- 当前版本：交互式问答Demo（显示两次答案 + 成本统计） -------------------
 def interactive_qa():
     """
     【新手说明】：启动交互式问答，输入问题得到答案，输入'退出'结束程序
@@ -440,8 +398,23 @@ def interactive_qa():
         # 打印结果（去掉重复的重写打印）
         print(f"\n【原始初步答案】：{raw_answer}")
         print(f"\n【最终修正答案】：{final_answer}")
+        # 过滤：只显示实际喂给 LLM 的有效 chunk（与 format_docs_with_chunks 规则一致）
+        valid_source_docs = [
+            doc for doc in source_docs
+            if len(doc.page_content.strip()) > 20
+            and any(allow_name in doc.metadata.get("source", "")
+                    for allow_name in ALLOW_DOC_NAMES)
+        ]
+        # 去重
+        unique_source_docs = []
+        seen = set()
+        for doc in valid_source_docs:
+            if doc.page_content not in seen:
+                seen.add(doc.page_content)
+                unique_source_docs.append(doc)
+
         print("\n参考来源：")
-        for i, doc in enumerate(source_docs):
+        for i, doc in enumerate(unique_source_docs[:5]):  # 只显示前5条参考来源
             print(f"[{i+1}] {doc.metadata['source']}")
             print(f"    内容片段：{doc.page_content[:100]}...")
 

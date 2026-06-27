@@ -1589,3 +1589,59 @@ git add .
 git commit -m "Day21前半：BM25检索器 + RRF混合检索框架完成"
 git push
 ```
+
+---
+
+# Day21 后半 + 项目大清理｜2026-06-27
+
+## 完成内容
+
+### 1. 成本追踪复活（Token 统计归零 bug 修复）✅
+- **根因**：`LLMClient._openai_compatible_chat()` 里的 `tracker.record()` 从未被调用——RAG 系统用的是 `create_llm()` → `ChatOpenAI`，完全绕过 `LLMClient`
+- **修复**：在 `llm_factory.py` 新增 `CostTrackingCallback(BaseCallbackHandler)`，挂到 `ChatOpenAI(callbacks=[...])`，每次 LLM 调用结束自动触发 `on_llm_end()` → `tracker.record()`
+- **验证**：退出时输出「总调用 9 次 / 总输入 70831 Token / 总费用 ¥0.0000」✅（费用为 0 待修，PRICING 短名匹配问题）
+
+### 2. llm_client.py + llm_factory.py 合并 ✅
+- 删除 `LLMClient` 类、`_openai_compatible_chat()`、`_ollama_chat()`、`get_client()`、`chat()` 全部死代码
+- 保留 `ModelType` 枚举 + `MODEL_CONFIG` 字典（唯一配置维护点）+ `create_llm()`
+- 新增 `CostTrackingCallback` + `CostTrackingCallback` 挂载
+- `llm_client.py` 安全删除（无文件引用）
+
+### 3. 配置文件清理
+- `settings.py`：注释掉 5 个死配置（`LLM_MODEL_NAME`、`DEEPSEEK_MODEL_NAME`、`DEEPSEEK_FLASH_MODEL_NAME`、`KIMI_MODEL_NAME`、`COLLECTION_NAME`），所有模型名已收归 `llm_factory.py`
+- `config.yaml`：确认无人引用，历史遗留文件
+- `vector_store.py`：删除 `COLLECTION_NAME` 导入
+
+### 4. 死代码大清理
+**`base_rag.py` 删除：**
+- `import random, numpy as np` + `SEED`（MMR 已移除）
+- `DASHSCOPE_API_KEY` 导入（只用于注释代码）
+- `format_docs()` 壳函数（无人调用）
+- 旧版 `interactive_qa()`（被新版覆盖）
+
+**`vector_store.py` 删除：**
+- `load_documents_from_json()` — 旧版文档加载，已废弃
+- `split_documents()` — 旧版 RecursiveCharacterTextSplitter，已改用 rule_chunk
+- `MultiDocRetriever` 类 — 已由 `HybridRetriever` 替代
+- `similarity_search()` — 无人调用
+- 无用 import：`DashScopeEmbeddings`、`Chroma`、`RecursiveCharacterTextSplitter`、`BaseRetriever`、`json`
+
+## 修改文件
+- `core/llm_factory.py`（合并 + CostTrackingCallback）
+- `core/llm_client.py`（已删除）
+- `config/settings.py`（注释死配置）
+- `rag/vector_store.py`（删除死代码 + 清理导入）
+- `rag/base_rag.py`（删除死代码）
+- `rag/hybrid_retriever.py`（修复 source 不含后缀 bug）
+
+## 关键理解
+- **LangChain callback 机制**：`BaseCallbackHandler.on_llm_end()` 是 LLM 调用结束的钩子，挂到 `ChatOpenAI(callbacks=[...])` 自动触发
+- **单一配置源**：`MODEL_CONFIG` 在 `llm_factory.py` 是唯一维护点，`settings.py` 只管运行时参数（temperature、chunk_size）
+- **死代码清理原则**：先 grep 确认无人引用 → 注释 → 测试通过 → 删除
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day21后半：成本追踪复活 + 文件合并 + 项目大清理"
+git push
+```
