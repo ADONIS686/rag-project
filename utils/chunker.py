@@ -162,6 +162,157 @@ def rule_chunk(
     return chunks
 
 
+def semantic_chunk(
+    documents: List[Document],
+    embedding_model=None,
+    chunk_size: int = CHUNK_SIZE,
+    chunk_overlap: int = CHUNK_OVERLAP,
+    similarity_threshold: float = 0.5,
+) -> List[Document]:
+    """
+    基于 Embedding 相似度的语义自适应分块。
+    
+    核心：用 embedding 算相邻段落相似度，低于阈值就断开。
+         表格/图片原样透传。
+    """
+    import numpy as np
+
+    if embedding_model is None:
+        from langchain_community.embeddings import DashScopeEmbeddings
+        from config.settings import DASHSCOPE_API_KEY, EMBEDDING_MODEL_NAME
+        embedding_model = DashScopeEmbeddings(
+            model=EMBEDDING_MODEL_NAME,
+            dashscope_api_key=DASHSCOPE_API_KEY,
+        )
+
+    # 第 0 步：TXT 全文按空行拆段落（对齐 PDF 的段落粒度）
+    text_docs = [d for d in documents if d.metadata.get("block_type", "text") == "text"]
+    if len(text_docs) == 1 and len(text_docs[0].page_content) > 500:
+        big_doc = text_docs[0]
+        paragraphs = []
+        for p in big_doc.page_content.split("\n\n"):
+            p = p.strip()
+            if not p or len(p) < 5:
+                continue
+            # 超长段落：在句末标点处智能切分，避免断在句子中间
+            if len(p) > 2000:
+                start = 0
+                while start < len(p):
+                    end = min(start + 2000, len(p))
+                    if end < len(p):
+                        for sep in ("。", "！", "？", "\n"):
+                            #rfind = reverse find，从右往左反向查找子串，返回子串第一次出现的下标；找不到返回 -1。
+                            pos = p.rfind(sep, start, end)
+                            if pos > start + 1000:
+                                end = pos + 1
+                                break
+                    sub = p[start:end].strip()
+                    if sub and len(sub) >= 5:
+                        paragraphs.append(sub)
+                    start = end
+            else:
+                paragraphs.append(p)
+        documents = [
+            Document(page_content=p, metadata={**big_doc.metadata, "block_type": "text"})
+            for p in paragraphs
+        ]
+
+    # 第 1 步：区分文本和特殊块
+    text_cache = []         # [(index_in_documents, content)]
+    special_cache = []      # [(index_in_documents, doc)]
+    for i, doc in enumerate(documents):
+        if not doc.page_content.strip():
+            continue
+        bt = doc.metadata.get("block_type", "text")
+        if bt in ("table", "image"):
+            special_cache.append((i, doc))
+        else:
+            text_cache.append((i, doc.page_content.strip()))
+
+
+    if not text_cache:
+        return rule_chunk(documents)
+
+    # 第 2 步：批量算 embedding
+    texts_only = [t[:2048] for _, t in text_cache]
+    #embedding_model.embed_documents把文本转为多维向量，输出一个元素是多维向量的列表（本质嵌套列表）
+    #最终转为 numpy 数组，方便后续计算余弦相似度
+    text_vectors = np.array(embedding_model.embed_documents(texts_only))
+
+    # 第 3 步：相邻相似度 → 标记断点
+    split_after = set()
+    for j in range(len(text_vectors) - 1):
+        v1, v2 = text_vectors[j], text_vectors[j + 1]
+        cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
+        if cos < similarity_threshold:
+            split_after.add(j)  # 在第 j 段后断开
+
+    # 第 4 步：按断点分组，组内用规则拼接
+    chunks = []
+    chunk_id = 0
+    special_ptr = 0
+    current_chunk = ""
+    current_source = ""
+
+    def flush():
+        #变量 chunk_id 不在当前 flush() 函数内部定义，也不是全局变量，而是外层包裹函数 semantic_chunk 里定义的局部变量。
+        nonlocal chunk_id
+        if current_chunk.strip():
+            chunks.append(Document(
+                page_content=current_chunk.strip(),
+                metadata={"source": current_source, "block_type": "text", "chunk_id": chunk_id},
+            ))
+            chunk_id += 1
+
+    for group_start in range(len(text_cache)):
+        # 输出 special blocks that appear before this text
+        while special_ptr < len(special_cache) and special_cache[special_ptr][0] < text_cache[group_start][0]:
+            _, sp_doc = special_cache[special_ptr]
+            #把手里正在积攒的文本current_chunk落盘生成 chunk
+            flush()
+            current_chunk = ""
+            #把表格 / 图片单独作为一个 chunk 存入结果列表。
+            chunks.append(Document(
+                page_content=sp_doc.page_content.strip(),
+                metadata={**sp_doc.metadata, "chunk_id": chunk_id},
+            ))
+            chunk_id += 1
+            special_ptr += 1
+
+        _, content = text_cache[group_start]
+        current_source = documents[text_cache[group_start][0]].metadata.get("source", "")
+
+        # 当前段落 + 当前缓存不超 → 追加
+        if len(current_chunk) + len(content) <= chunk_size:
+            current_chunk += content + "\n\n"
+        else:
+            flush()
+            overlap = current_chunk[-chunk_overlap:] if len(current_chunk) > chunk_overlap else ""
+            current_chunk = overlap + content + "\n\n"
+
+        # 遇到断点 → flush
+        if group_start in split_after:
+            flush()
+            current_chunk = ""
+
+    flush()  # 最后一片
+
+    # 尾部剩余的特殊块
+    while special_ptr < len(special_cache):
+        _, sp_doc = special_cache[special_ptr]
+        flush()
+        current_chunk = ""
+        chunks.append(Document(
+            page_content=sp_doc.page_content.strip(),
+            metadata={**sp_doc.metadata, "chunk_id": chunk_id},
+        ))
+        chunk_id += 1
+        special_ptr += 1
+
+    return chunks
+
+
+
 # ========== 便捷函数：一键分块 ==========
 
 def chunk_document(file_path: str, chunk_size: int = 800) -> List[Document]:

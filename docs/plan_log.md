@@ -1642,6 +1642,59 @@ git push
 ## Git 提交（待执行）
 ```bash
 git add .
-git commit -m "Day21后半：成本追踪复活 + 文件合并 + 项目大清理"
+git commit -m "Day21收尾：语义分块完成 + 计划更新(多轮对话/Claude Code记忆)"
+git push
+```
+
+---
+
+# Day21 收尾 — 语义自适应分块完成｜6.29
+
+## 完成内容
+- **`utils/chunker.py`** — 新增 `semantic_chunk()` 函数（~130行）
+  - 第 0 步：TXT 全文按 `\n\n` 拆段落（与 PDF 段落粒度对齐）
+  - 超长段落（>2000字）智能切分：在句末标点（。！？）附近断开，避免断在句子中间
+  - 第 1-4 步：复用 `rule_chunk()` 的拼接/overlap/flush 逻辑，断点判断改为 embedding 余弦相似度
+  - Bug：DashScope API 限制单段 ≤2048 字符 → 第 0 步智能切分 + `texts_only = [t[:2048] for _, t in text_cache]` 兜底
+- **`rag/vector_store.py`** — `create_vector_store()` 第 66 行改用 `semantic_chunk(docs)`
+- **向量库重建**：wenben1.txt 从 26 个 chunk 降到 11 个（语义完整度提升）
+- **`plan_v2.md` 更新**：
+  - Day21 末尾加"多轮对话上下文窗口记忆"遗留项
+  - Day29 加 Claude Code 双层记忆对标说明
+
+## 遇到的问题
+1. `embed_documents` 报 `InvalidParameter: Range of input length should be [1, 2048]`
+   → TXT 全文拆段后仍有超长段落 → 第 0 步加智能句末切分 + export 端 `[:2048]` 兜底
+2. TXT 与 PDF 段落粒度不一致（TXT 全文一个 Document → 无法算相邻相似度）
+   → 第 0 步统一按 `\n\n` 拆分，两种格式后续流程完全通用
+
+## 关键理解
+- **语义分块原理**：embedding 算相邻段落余弦相似度 → 低于阈值（0.5）断开 → 组内规则拼接
+- **TXT/PDF 统一处理**：第 0 步补齐 TXT 的段落粒度，之后第 1-4 步对两种格式完全透明
+- **超长文本三级防护**：第 0 步句末切分 → `[:2048]` 兜底 → `flush()` 中的硬截断（未启用，留作保险）
+
+---
+
+# 计划更新 — 多轮对话 + 记忆机制｜6.29
+
+## 项目一遗留追加
+- **多轮对话上下文窗口记忆**：`interactive_qa()` 维护滑动窗口（最近 5 轮）→ 注入 Prompt → 解决指代消解
+- **三层记忆架构**：上下文窗口（会话内）/ 跨会话缓存（cache.py）/ Reviewer 优化知识（reviewer_memory.json）
+
+## 项目二 Claude Code 记忆借鉴
+| Claude Code 层 | 项目二对应 | 状态 |
+|---|---|---|
+| 静态层（claude.md） | `settings.py` 评测配置 | ✅ 已有 |
+| 动态层（自动记忆） | `reviewer_memory.json` 持久化 BadCase 优化建议 | 🔲 Day29 |
+| 上下文窗口 | 单次评测 50 条结果 → Reviewer 全局视野 | 🔲 Day29 |
+| 三层读写隔离 | TestRunner(读) / Scorer(读) / Reviewer(读写) | 🔲 设计阶段 |
+
+## 面试话术（预写）
+> "借鉴 Claude Code 的双层记忆架构：静态层是 settings.py 里的评测标准，动态层是 Reviewer 的 JSON 持久化知识库。三层读写权限天然隔离——TestRunner 只读配置、Scorer 只读结果、Reviewer 读写优化知识。这和 Claude Code 的 claude.md + 自动记忆分层逻辑是同一个哲学。"
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day21收尾：语义分块完成 + 计划更新(多轮对话/Claude Code记忆)"
 git push
 ```

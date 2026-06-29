@@ -47,6 +47,7 @@ def create_vector_store() -> None:
     # 新：Marker 解析 + 规则分块 + 多文档隔离入库
     from utils.marker_parser import parse_document
     from utils.chunker import rule_chunk
+    from utils.chunker import semantic_chunk
     from core.vector_store_manager import VectorStoreManager
 
     # 逐文档：Marker解析 → 规则分块 → 独立入库
@@ -61,7 +62,8 @@ def create_vector_store() -> None:
         
         print(f"📄 处理: {file_name}")
         docs = parse_document(file_path)    # ① Marker AI 解析
-        chunks = rule_chunk(docs)           # ② 规则分块（表格/图片透传）
+        #chunks = rule_chunk(docs)           # ② 规则分块（表格/图片透传）
+        chunks = semantic_chunk(docs)       # ② 语义分块
         manager.import_document(file_name, chunks)  # ③ 多文档隔离入库
         print(f"   ✅ {len(chunks)} 个 chunk 入库")
     print(f"✅ 全部文档导入完成")
@@ -104,7 +106,7 @@ def load_vector_store(doc_filter=None, top_k: int = 10):
 # ------------------- 测试代码（直接运行即可）-------------------
 if __name__ == "__main__":
     # 1. 创建向量库（多文档隔离入库）
-    #create_vector_store()
+    create_vector_store()
 
     # 2. 用 VectorStoreManager 加载并检索
     from core.vector_store_manager import VectorStoreManager
