@@ -398,7 +398,7 @@ def interactive_qa():
         # 打印结果（去掉重复的重写打印）
         print(f"\n【原始初步答案】：{raw_answer}")
         print(f"\n【最终修正答案】：{final_answer}")
-        # 过滤：只显示实际喂给 LLM 的有效 chunk（与 format_docs_with_chunks 规则一致）
+        # 过滤：只显示实际喂给 LLM 的有效 chunk
         valid_source_docs = [
             doc for doc in source_docs
             if len(doc.page_content.strip()) > 20
@@ -414,7 +414,7 @@ def interactive_qa():
                 unique_source_docs.append(doc)
 
         print("\n参考来源：")
-        for i, doc in enumerate(unique_source_docs[:5]):  # 只显示前5条参考来源
+        for i, doc in enumerate(unique_source_docs[:5]):
             print(f"[{i+1}] {doc.metadata['source']}")
             print(f"    内容片段：{doc.page_content[:100]}...")
 

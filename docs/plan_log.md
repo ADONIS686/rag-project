@@ -1673,6 +1673,52 @@ git push
 - **TXT/PDF 统一处理**：第 0 步补齐 TXT 的段落粒度，之后第 1-4 步对两种格式完全透明
 - **超长文本三级防护**：第 0 步句末切分 → `[:2048]` 兜底 → `flush()` 中的硬截断（未启用，留作保险）
 
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day21收尾：语义分块完成 + 计划更新(多轮对话/Claude Code记忆)"
+git push
+```
+
+---
+
+# Day22 — BGE Reranker 集成 + 容错机制｜6.30
+
+## 完成内容
+
+### 1. BGE Reranker 集成 ✅
+- 新建 `core/bge_reranker.py`：封装 `BAAI/bge-reranker-v2-m3` Cross-Encoder 精排模型
+- `HybridRetriever._get_relevant_documents()` 新增第四步 BGE 精排
+- 检索管线完整流程：**BM25 → 向量 → RRF 融合 → BGE Rerank（Top-5）**
+- 添加 `MAX_CONTENT_LEN=4096` 截断保护
+
+### 2. 全链路验证通过 ✅
+- `python main.py` → 「主角是谁」→ 答案"主角是巫真" ✅
+- BGE Reranker 加载约 6 分钟（首次下载 2.27GB）
+
+### 3. 容错机制代码已准备（待确认后写入）
+- `core/retry_handler.py`：指数退避重试装饰器（1s→2s→4s→8s，最大3次）
+- `base_rag.py`：`_safe_chain_invoke()` 安全调用 LLM 链 + `interactive_qa()` try/except
+- `vector_store_manager.py` / `hybrid_retriever.py`：检索加重试保护
+
+## 遇到的坑
+
+1. **FlagEmbedding 联网下载失败**：`WinError 10060` 超时
+   - `HF_ENDPOINT` 设镜像 → 不管用（`list_repo_templates` 不走）
+   - `HF_HUB_OFFLINE="1"` → 也不管用（已下载仍尝试联网）
+   - **最终方案**：自动检测本地 snapshot 目录，直接传本地路径 `FlagReranker(local_path)`
+
+2. **`prepare_for_model` 不兼容**：transformers 5.x 删了这个方法
+   - lambda 版 → `list[int]` 被当 str，ValueError
+   - decode 回文本 + `text=/text_pair=` 传参 ✅
+
+## Git 提交（待执行）
+```bash
+git add .
+git commit -m "Day22：BGE Reranker精排集成 + transformers5.x兼容修复"
+git push
+```
+
 ---
 
 # 计划更新 — 多轮对话 + 记忆机制｜6.29

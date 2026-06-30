@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.vector_store_manager import VectorStoreManager
 from core.bm25_retriever import BM25Retriever
+from core.bge_reranker import BgeReranker
 from typing import List, Dict, Optional
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
@@ -113,6 +114,7 @@ class HybridRetriever(BaseRetriever):
         self._manager = manager
         self._bm25 = bm25
         self._top_k = top_k
+        self._reranker = None  # BGE 精排器（懒加载）
         self._doc_filter = doc_filter
 
     def _get_relevant_documents(self, query: str) -> List[Document]:
@@ -130,13 +132,9 @@ class HybridRetriever(BaseRetriever):
         )
 
         # ③ RRF 融合
-        merged = _rrf_fusion(bm25_results, vector_results, top_k=self._top_k)
+        merged = _rrf_fusion(bm25_results, vector_results, top_k=max(20, self._top_k))
 
-        # ④ 转成 LangChain Document
-        return [
-            Document(
-                page_content=r["content"],
-                metadata={"source": r.get("source", r["document_name"])},
-            )
-            for r in merged
-        ]
+        # ④ BGE 精排
+        if self._reranker is None:
+            self._reranker = BgeReranker()
+        return self._reranker.rerank(query, merged, top_k=self._top_k)
